@@ -1,37 +1,59 @@
-[gd_scene load_steps=4 format=3 uid="uid://cpu2nlek4xgfr"]
+[gd_scene format=3 uid="uid://cpu2nlek4xgfr"]
 
 [ext_resource type="PackedScene" uid="uid://bxru1ktk0nqwm" path="res://scenes/table/Table.tscn" id="1_nha0i"]
 [ext_resource type="PackedScene" uid="uid://5jh8p2v8an4e" path="res://scenes/cards/Card.tscn" id="2_q24mn"]
-[ext_resource type="Script" path="res://scripts/effects/HandFocus.gd" id="3_5xcut"]
+[ext_resource type="Script" uid="uid://d2f04w0ro8oct" path="res://scripts/effects/HandFocus.gd" id="3_5xcut"]
 
 [node name="Main" type="Node2D" unique_id=1534491376]
 
 [node name="Table" parent="." unique_id=1642455344 instance=ExtResource("1_nha0i")]
 position = Vector2(640, 360)
 
-[node name="PlayerHand" type="Node2D" parent="."]
+[node name="PlayerHand" type="Node2D" parent="." unique_id=294880449]
 script = ExtResource("3_5xcut")
 
 [node name="HandCard1" parent="PlayerHand" unique_id=1800681127 instance=ExtResource("2_q24mn")]
 position = Vector2(480, 559.99994)
 rotation = -0.10471976
 scale = Vector2(1.5, 1.5)
+pip_scale = null
+pip_offset_adjustment = null
 
 [node name="HandCard2" parent="PlayerHand" unique_id=1466429600 instance=ExtResource("2_q24mn")]
+z_index = 10
 position = Vector2(560, 555)
 rotation = -0.05235988
 scale = Vector2(1.5, 1.5)
+rank = "7"
+suit = "CLUB"
+pip_scale = null
+pip_offset_adjustment = null
 
 [node name="HandCard3" parent="PlayerHand" unique_id=1912964070 instance=ExtResource("2_q24mn")]
+z_index = 20
 position = Vector2(640, 550)
 scale = Vector2(1.5, 1.5)
+rank = "10"
+suit = "SPADE"
+pip_scale = null
+pip_offset_adjustment = null
 
 [node name="HandCard4" parent="PlayerHand" unique_id=118289768 instance=ExtResource("2_q24mn")]
+z_index = 30
 position = Vector2(720, 555)
 rotation = 0.05235988
 scale = Vector2(1.5, 1.5)
+rank = "K"
+suit = "DIAMOND"
+pip_scale = null
+pip_offset_adjustment = null
 
 [node name="HandCard5" parent="PlayerHand" unique_id=2137614381 instance=ExtResource("2_q24mn")]
+z_index = 40
 position = Vector2(800, 560)
 rotation = 0.10471976
 scale = Vector2(1.5, 1.5)
+rank = "8"
+suit = "SPADE"
+pip_scale = null
+pip_offset_adjustment = null
