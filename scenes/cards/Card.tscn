@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://5jh8p2v8an4e"]
+
+[ext_resource type="Texture2D" uid="uid://bfgfuklcnr33t" path="res://assets/cards/fronts/card_front_v01.png" id="1_fa4yn"]
+[ext_resource type="Script" uid="uid://bkvp5hky6yp0l" path="res://scripts/effects/CardHover.gd" id="2_l742q"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_yp3mp"]
+size = Vector2(64, 96)
+
+[node name="Card" type="Node2D" unique_id=1800681127]
+script = ExtResource("2_l742q")
+
+[node name="Shadow" type="Sprite2D" parent="." unique_id=2001391959]
+modulate = Color(0, 0, 0, 0.25)
+texture_filter = 1
+position = Vector2(4, 4)
+z_index = -1
+texture = ExtResource("1_fa4yn")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1656635227]
+texture_filter = 1
+z_index = 0
+texture = ExtResource("1_fa4yn")
+
+[node name="Area2D" type="Area2D" parent="." unique_id=896877353]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=16073557]
+shape = SubResource("RectangleShape2D_yp3mp")
