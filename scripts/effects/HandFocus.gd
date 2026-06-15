@@ -1,7 +1,17 @@
 extends Node2D
 
+signal hand_finished(result: Dictionary)
+
 const DeckScript := preload("res://scripts/cards/Deck.gd")
 const CardScene := preload("res://scenes/cards/Card.tscn")
+const PLAYER_NAMES := ["You", "Bot 1", "Bot 2", "Bot 3"]
+const MODE_QUICK_PLAY := "quick_play"
+const MODE_GRAND_PRIX := "grand_prix"
+const PHASE_DEALING := "DEALING"
+const PHASE_PLAYER_TURN := "PLAYER_TURN"
+const PHASE_PLAYER_DISCARD_CHOICE := "PLAYER_DISCARD_CHOICE"
+const PHASE_BOT_TURN := "BOT_TURN"
+const PHASE_HAND_OVER := "HAND_OVER"
 
 @export var separation_pixels: float = 16.0
 @export var separation_duration: float = 0.1
@@ -9,26 +19,36 @@ const CardScene := preload("res://scenes/cards/Card.tscn")
 @export var drag_start_pixels: float = 4.0
 @export var play_zone_path: NodePath = ^"../PlayZone"
 @export var active_card_node_path: NodePath = ^"../ActiveCard"
+@export var active_card_label_path: NodePath = ^"../ActiveCardLabel"
+@export var play_prompt_label_path: NodePath = ^"../PlayZone/PlayHereLabel"
 @export var deck_count_label_path: NodePath = ^"../DeckArea/DeckCountLabel"
 @export var opponent_info_label_path: NodePath = ^"../OpponentInfo"
+@export var hand_counter_label_path: NodePath = ^"../HandCounterLabel"
 @export var turn_label_path: NodePath = ^"../TurnBanner"
+@export var win_notification_label_path: NodePath = ^"../WinNotification"
+@export var tap_status_label_path: NodePath = ^"../RightActionStack/TapStatusLabel"
+@export var hand_summary_label_path: NodePath = ^"../HandSummaryPanel/HandSummaryLabel"
+@export var scoreboard_label_path: NodePath = ^"../ScoreboardPanel/ScoreboardLabel"
+@export var rules_button_path: NodePath = ^"../RulesButton"
+@export var rules_modal_path: NodePath = ^"../RulesModal"
+@export var rules_close_button_path: NodePath = ^"../RulesModal/Panel/CloseButton"
 @export var feedback_label_path: NodePath = ^"../CommentaryPanel/MessagesLabel"
 @export var play_button_path: NodePath = ^"../ActionButtons/PlayButton"
 @export var pass_button_path: NodePath = ^"../ActionButtons/PassButton"
 @export var tap_button_path: NodePath = ^"../ActionButtons/TapButton"
 @export var end_turn_button_path: NodePath = ^"../ActionButtons/EndTurnButton"
 @export var new_hand_button_path: NodePath = ^"../ActionButtons/NewHandButton"
+@export var new_championship_button_path: NodePath = ^"../HandSummaryPanel/NewChampionshipButton"
 @export var rank_choice_container_path: NodePath = ^"../RankChoiceButtons"
 @export var max_feedback_messages: int = 4
 @export var ante_amount: int = 1
 @export var max_auto_actions_per_hand: int = 100
-
-const PLAYER_NAMES := ["You", "Bot 1", "Bot 2", "Bot 3"]
-const PHASE_DEALING := "DEALING"
-const PHASE_PLAYER_TURN := "PLAYER_TURN"
-const PHASE_PLAYER_DISCARD_CHOICE := "PLAYER_DISCARD_CHOICE"
-const PHASE_BOT_TURN := "BOT_TURN"
-const PHASE_HAND_OVER := "HAND_OVER"
+@export var total_hands: int = 5
+@export var starting_chips: int = 0
+@export var championship_win_points: int = 25
+@export var auto_start: bool = true
+@export var game_mode: String = MODE_QUICK_PLAY
+@export var use_external_results_screen: bool = false
 
 var cards: Array[Node2D] = []
 var focused_card: Node2D
@@ -42,6 +62,7 @@ var drag_start_global_position := Vector2.ZERO
 var drag_card_global_offset := Vector2.ZERO
 var deck: RefCounted
 var active_card_data
+var play_pile: Array = []
 var original_states := {}
 var feedback_messages: Array[String] = []
 var hands: Array = [[], [], [], []]
@@ -53,7 +74,29 @@ var auto_turn_action_count := 0
 var game_phase := PHASE_HAND_OVER
 var hand_over := false
 var waiting_for_bot := false
-var player_has_tapped := false
+var player_tap_armed := false
+var tap_declared_turn_counter := -1
+var tap_expires_on_player_turn_counter := -1
+var player_turn_counter := 0
+var hand_winner_name := ""
+var champion_name := ""
+var championship_complete := false
+var current_hand_number := 1
+var last_hand_points_awarded := 0
+var last_hand_chips_awarded := 0
+var modal_open := false
+var player_points := {
+	"You": 0,
+	"Bot 1": 0,
+	"Bot 2": 0,
+	"Bot 3": 0,
+}
+var player_chips := {
+	"You": 0,
+	"Bot 1": 0,
+	"Bot 2": 0,
+	"Bot 3": 0,
+}
 
 
 func _ready() -> void:
@@ -93,15 +136,41 @@ func _ready() -> void:
 			active_card.set_hand_controlled(true)
 
 	_connect_action_buttons()
-	start_new_hand()
+	if auto_start:
+		start_session({
+			"mode": game_mode,
+			"total_hands": total_hands,
+			"starting_chips": starting_chips,
+			"external_results": use_external_results_screen,
+		})
 	print("DEBUG: _ready end")
 
 
+func start_session(config: Dictionary = {}) -> void:
+	game_mode = str(config.get("mode", game_mode))
+	total_hands = max(1, int(config.get("total_hands", total_hands)))
+	starting_chips = max(0, int(config.get("starting_chips", starting_chips)))
+	use_external_results_screen = bool(config.get("external_results", use_external_results_screen))
+	_reset_championship()
+	start_new_hand()
+
+
 func start_new_hand() -> void:
+	if modal_open:
+		return
+
+	if championship_complete:
+		_set_feedback("Championship is complete. %s wins." % champion_name)
+		_update_table_ui()
+		return
+
 	print("DEBUG: start_new_hand start")
 	_set_phase(PHASE_DEALING)
 	hand_over = false
 	waiting_for_bot = false
+	hand_winner_name = ""
+	last_hand_points_awarded = 0
+	last_hand_chips_awarded = 0
 	pending_drag_card = null
 	dragged_card = null
 	dragged_stack.clear()
@@ -109,9 +178,11 @@ func start_new_hand() -> void:
 	selected_card = null
 	_clear_selected_cards()
 	focused_card = null
-	player_has_tapped = false
+	_reset_player_tap()
+	player_turn_counter = 0
 	consecutive_passes = 0
 	auto_turn_action_count = 0
+	play_pile.clear()
 	_clear_rank_choice_buttons()
 	pot = PLAYER_NAMES.size() * ante_amount
 	dealer_index = (dealer_index + 1) % PLAYER_NAMES.size()
@@ -131,7 +202,7 @@ func start_new_hand() -> void:
 
 	var drawn_active_cards: Array = deck.deal(1)
 	if not drawn_active_cards.is_empty():
-		_set_active_card(drawn_active_cards[0])
+		_play_cards_to_pile(drawn_active_cards)
 		print("DEBUG: active card dealt %s %s deck=%d" % [active_card_data.rank, active_card_data.suit, deck.cards.size()])
 
 	_render_player_hand()
@@ -143,6 +214,27 @@ func start_new_hand() -> void:
 
 func deal_player_hand() -> void:
 	start_new_hand()
+
+
+func start_next_grand_prix_hand() -> void:
+	if modal_open or game_mode != MODE_GRAND_PRIX or not hand_over or championship_complete:
+		return
+
+	current_hand_number += 1
+	start_new_hand()
+
+
+func _reset_championship() -> void:
+	current_hand_number = 1
+	championship_complete = false
+	champion_name = ""
+	hand_winner_name = ""
+	last_hand_points_awarded = 0
+	last_hand_chips_awarded = 0
+
+	for player_name in PLAYER_NAMES:
+		player_points[player_name] = 0
+		player_chips[player_name] = starting_chips
 
 
 func _set_phase(next_phase: String) -> void:
@@ -163,10 +255,13 @@ func _begin_current_turn() -> void:
 	print("TURN: %d / %s" % [current_player_index, PLAYER_NAMES[current_player_index]])
 
 	if current_player_index == 0:
+		player_turn_counter += 1
 		auto_turn_action_count = 0
 		waiting_for_bot = false
 		_set_phase(PHASE_PLAYER_TURN)
 		_set_turn_feedback()
+		if player_tap_armed and player_turn_counter == tap_expires_on_player_turn_counter:
+			_set_feedback("TAP armed — go out this turn or lose TAP.")
 		_update_table_ui()
 		print("DEBUG: automatic processing stopped at PLAYER_TURN")
 		return
@@ -207,6 +302,15 @@ func _set_active_card(card_data) -> void:
 	if active_card.has_method("set_hand_controlled"):
 		active_card.set_hand_controlled(true)
 	_apply_card_data(active_card, active_card_data)
+
+
+func _play_cards_to_pile(played_cards: Array) -> void:
+	for card_data in played_cards:
+		if not card_data:
+			continue
+
+		play_pile.append(card_data)
+		_set_active_card(card_data)
 
 
 func _get_active_card_node() -> Node2D:
@@ -319,6 +423,10 @@ func _get_authored_state_for_index(index: int) -> Dictionary:
 
 
 func _process(_delta: float) -> void:
+	if modal_open:
+		_set_focused_card(null)
+		return
+
 	if hand_over or is_instance_valid(dragged_card):
 		return
 
@@ -326,6 +434,9 @@ func _process(_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if modal_open:
+		return
+
 	if hand_over or current_player_index != 0:
 		return
 
@@ -540,7 +651,7 @@ func _play_player_opening_card(card: Node2D, hand_index: int, played_card) -> vo
 
 	consecutive_passes = 0
 	_remove_card_from_hand(0, hand_index)
-	_set_active_card(played_card)
+	_play_cards_to_pile([played_card])
 	_set_selected_card(null)
 	_set_feedback("Played %s %s." % [played_card.rank, played_card.suit])
 	print("Card played: %s %s" % [played_card.rank, played_card.suit])
@@ -557,7 +668,7 @@ func _play_player_opening_card(card: Node2D, hand_index: int, played_card) -> vo
 
 func _play_player_discard_card(card: Node2D, hand_index: int, played_card) -> void:
 	_remove_card_from_hand(0, hand_index)
-	_set_active_card(played_card)
+	_play_cards_to_pile([played_card])
 	_set_selected_card(null)
 	_set_feedback("Discarded %s %s." % [played_card.rank, played_card.suit])
 	print("Card discarded: %s %s" % [played_card.rank, played_card.suit])
@@ -565,6 +676,7 @@ func _play_player_discard_card(card: Node2D, hand_index: int, played_card) -> vo
 	if _check_empty_hand_after_play(0):
 		return
 
+	_expire_player_tap_after_turn_if_needed()
 	_advance_turn()
 	_update_table_ui()
 
@@ -597,10 +709,9 @@ func _validate_card_chain(chain_cards: Array) -> bool:
 
 func _play_valid_player_chain(chain_cards: Array) -> void:
 	var chain_description := _describe_card_chain(chain_cards)
-	var final_card = chain_cards[chain_cards.size() - 1]
 	_remove_selected_cards_from_player_hand()
 	consecutive_passes = 0
-	_set_active_card(final_card)
+	_play_cards_to_pile(chain_cards)
 	_set_feedback("Played chain: %s." % chain_description)
 	print("Played chain: %s" % chain_description)
 	_clear_selected_cards()
@@ -608,6 +719,7 @@ func _play_valid_player_chain(chain_cards: Array) -> void:
 	if _check_empty_hand_after_play(0):
 		return
 
+	_expire_player_tap_after_turn_if_needed()
 	_advance_turn()
 	_update_table_ui()
 
@@ -677,12 +789,19 @@ func _update_table_ui() -> void:
 
 	var turn_label := get_node_or_null(turn_label_path) as Label
 	if turn_label:
-		if hand_over:
-			turn_label.text = "HAND OVER"
-		elif game_phase == PHASE_PLAYER_DISCARD_CHOICE:
+		turn_label.visible = not hand_over
+		if game_phase == PHASE_PLAYER_DISCARD_CHOICE:
 			turn_label.text = "DISCARD"
 		else:
 			turn_label.text = "%s TURN" % PLAYER_NAMES[current_player_index].to_upper()
+
+	var active_card_label := get_node_or_null(active_card_label_path) as CanvasItem
+	if active_card_label:
+		active_card_label.visible = not hand_over
+
+	var play_prompt_label := get_node_or_null(play_prompt_label_path) as CanvasItem
+	if play_prompt_label:
+		play_prompt_label.visible = not hand_over
 
 	var opponent_info_label := get_node_or_null(opponent_info_label_path) as Label
 	if opponent_info_label:
@@ -694,19 +813,47 @@ func _update_table_ui() -> void:
 
 	var play_button := get_node_or_null(play_button_path) as Button
 	if play_button:
+		play_button.visible = not hand_over
 		play_button.disabled = true
 
 	var pass_button := get_node_or_null(pass_button_path) as Button
 	if pass_button:
-		pass_button.disabled = hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0 or hands[0].is_empty() or _hand_has_match(hands[0], active_card_data)
+		pass_button.visible = not hand_over
+		pass_button.disabled = modal_open or hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0 or hands[0].is_empty() or _hand_has_match(hands[0], active_card_data)
 
 	var tap_button := get_node_or_null(tap_button_path) as Button
 	if tap_button:
-		tap_button.disabled = hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0 or hands[0].is_empty() or player_has_tapped
+		tap_button.visible = not hand_over
+		tap_button.disabled = modal_open or hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0 or hands[0].is_empty() or player_tap_armed
 
 	var end_turn_button := get_node_or_null(end_turn_button_path) as Button
 	if end_turn_button:
-		end_turn_button.disabled = hand_over or game_phase != PHASE_PLAYER_DISCARD_CHOICE or current_player_index != 0
+		end_turn_button.visible = not hand_over
+		end_turn_button.disabled = modal_open or hand_over or game_phase != PHASE_PLAYER_DISCARD_CHOICE or current_player_index != 0
+
+	var new_hand_button := get_node_or_null(new_hand_button_path) as Button
+	if new_hand_button:
+		var table_controls_results := not use_external_results_screen and game_mode == MODE_GRAND_PRIX
+		new_hand_button.visible = hand_over and table_controls_results and not championship_complete
+		new_hand_button.text = "NEXT HAND"
+		new_hand_button.disabled = modal_open or not hand_over or championship_complete or current_hand_number >= total_hands
+
+	var new_championship_button := get_node_or_null(new_championship_button_path) as Button
+	if new_championship_button:
+		var table_controls_championship := not use_external_results_screen and game_mode == MODE_GRAND_PRIX
+		new_championship_button.visible = hand_over and table_controls_championship and championship_complete
+		new_championship_button.disabled = modal_open or not championship_complete
+
+	var rules_button := get_node_or_null(rules_button_path) as Button
+	if rules_button:
+		rules_button.visible = true
+		rules_button.disabled = modal_open
+
+	_update_win_notification()
+	_update_tap_status()
+	_update_hand_counter()
+	_update_scoreboard()
+	_update_hand_summary()
 
 
 func _set_feedback(message: String) -> void:
@@ -738,7 +885,21 @@ func _connect_action_buttons() -> void:
 
 	var new_hand_button := get_node_or_null(new_hand_button_path) as Button
 	if new_hand_button:
-		new_hand_button.pressed.connect(start_new_hand)
+		new_hand_button.pressed.connect(_on_next_hand_button_pressed)
+
+	var new_championship_button := get_node_or_null(new_championship_button_path) as Button
+	if new_championship_button:
+		new_championship_button.pressed.connect(_on_new_championship_button_pressed)
+
+	var rules_button := get_node_or_null(rules_button_path) as Button
+	if rules_button:
+		rules_button.pressed.connect(_show_rules_modal)
+
+	var rules_close_button := get_node_or_null(rules_close_button_path) as Button
+	if rules_close_button:
+		rules_close_button.pressed.connect(_hide_rules_modal)
+
+	_hide_rules_modal()
 
 
 func _clear_rank_choice_buttons() -> void:
@@ -757,11 +918,17 @@ func _clear_rank_choice_buttons() -> void:
 
 
 func _on_play_button_pressed() -> void:
+	if modal_open:
+		return
+
 	_set_feedback("Drag a matching card to play.")
 	_update_table_ui()
 
 
 func _on_pass_button_pressed() -> void:
+	if modal_open:
+		return
+
 	if hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0:
 		return
 
@@ -772,11 +939,15 @@ func _on_pass_button_pressed() -> void:
 
 	_set_feedback("You passed.")
 	consecutive_passes += 1
+	_expire_player_tap_after_turn_if_needed()
 	_advance_turn()
 	_update_table_ui()
 
 
 func _on_tap_button_pressed() -> void:
+	if modal_open:
+		return
+
 	if hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0:
 		return
 
@@ -784,18 +955,99 @@ func _on_tap_button_pressed() -> void:
 		_update_table_ui()
 		return
 
-	player_has_tapped = true
-	_set_feedback("TAP called — play out to win.")
+	player_tap_armed = true
+	tap_declared_turn_counter = player_turn_counter
+	tap_expires_on_player_turn_counter = player_turn_counter + 1
+	_set_feedback("TAP called — go out on your next turn.")
 	_update_table_ui()
 
 
 func _on_end_turn_button_pressed() -> void:
+	if modal_open:
+		return
+
 	if hand_over or game_phase != PHASE_PLAYER_DISCARD_CHOICE or current_player_index != 0:
 		return
 
 	_set_feedback("Turn ended.")
+	_expire_player_tap_after_turn_if_needed()
 	_advance_turn()
 	_update_table_ui()
+
+
+func _on_next_hand_button_pressed() -> void:
+	if modal_open or not hand_over or championship_complete:
+		return
+
+	if current_hand_number >= total_hands:
+		_update_table_ui()
+		return
+
+	start_next_grand_prix_hand()
+
+
+func _on_new_championship_button_pressed() -> void:
+	if modal_open:
+		return
+
+	_reset_championship()
+	start_new_hand()
+
+
+func _show_rules_modal() -> void:
+	_set_modal_open(true)
+	var rules_modal := get_node_or_null(rules_modal_path) as CanvasItem
+	if rules_modal:
+		rules_modal.visible = true
+
+
+func _hide_rules_modal() -> void:
+	var rules_modal := get_node_or_null(rules_modal_path) as CanvasItem
+	if rules_modal:
+		rules_modal.visible = false
+	_set_modal_open(false)
+
+
+func _set_modal_open(is_open: bool) -> void:
+	if modal_open == is_open:
+		return
+
+	modal_open = is_open
+	_set_card_input_blocked(modal_open)
+
+	if modal_open:
+		_cancel_pointer_interaction_for_modal()
+
+	_update_table_ui()
+
+
+func _set_card_input_blocked(input_blocked: bool) -> void:
+	for card in cards:
+		if is_instance_valid(card) and card.has_method("set_input_blocked"):
+			card.set_input_blocked(input_blocked)
+
+	var active_card := _get_active_card_node()
+	if active_card and active_card.has_method("set_input_blocked"):
+		active_card.set_input_blocked(input_blocked)
+
+
+func _cancel_pointer_interaction_for_modal() -> void:
+	var stack := dragged_stack.duplicate()
+	if stack.is_empty() and is_instance_valid(dragged_card):
+		stack = [dragged_card]
+
+	for stack_card in stack:
+		if is_instance_valid(stack_card):
+			if stack_card.has_method("set_drag_active"):
+				stack_card.set_drag_active(false)
+			if stack_card.has_method("snap_to_hand"):
+				stack_card.snap_to_hand()
+
+	dragged_card = null
+	pending_drag_card = null
+	dragged_stack.clear()
+	drag_stack_offsets.clear()
+	_set_focused_card(null)
 
 
 func _run_bot_turns() -> void:
@@ -814,6 +1066,8 @@ func _run_bot_turns() -> void:
 			break
 
 		_take_bot_turn(current_player_index)
+		if hand_over or game_phase == PHASE_HAND_OVER:
+			break
 
 	waiting_for_bot = false
 	print("DEBUG: bot turn loop end phase=%s player=%d actions=%d" % [game_phase, current_player_index, auto_turn_action_count])
@@ -829,14 +1083,14 @@ func _take_bot_turn(player_index: int) -> void:
 		var match_index := _get_first_matching_card_index(hands[player_index], active_card_data)
 		var matched_card = _remove_card_from_hand(player_index, match_index)
 		consecutive_passes = 0
-		_set_active_card(matched_card)
+		_play_cards_to_pile([matched_card])
 		_set_feedback("%s played %s %s." % [PLAYER_NAMES[player_index], matched_card.rank, matched_card.suit])
 		if _check_empty_hand_after_play(player_index):
 			return
 
 		var discard_index: int = randi() % hands[player_index].size()
 		var discard_card = _remove_card_from_hand(player_index, discard_index)
-		_set_active_card(discard_card)
+		_play_cards_to_pile([discard_card])
 		_set_feedback("%s discarded %s %s." % [PLAYER_NAMES[player_index], discard_card.rank, discard_card.suit])
 		if _check_empty_hand_after_play(player_index):
 			return
@@ -888,17 +1142,11 @@ func _resolve_pass_cycle_if_needed() -> void:
 		_log_error_and_end_hand("Cannot draw cards: deck is missing.")
 		return
 
-	if deck.cards.is_empty():
-		_set_feedback("Deck is empty.")
-		print("Deck is empty.")
-		_end_hand_stalemate()
+	if not _ensure_deck_has_cards_for_draw():
 		return
 
 	for player_index in range(hands.size()):
-		if deck.cards.is_empty():
-			_set_feedback("Deck is empty.")
-			print("Deck is empty.")
-			_end_hand_stalemate()
+		if not _ensure_deck_has_cards_for_draw():
 			return
 
 		var drawn_cards: Array = deck.deal(1)
@@ -909,6 +1157,49 @@ func _resolve_pass_cycle_if_needed() -> void:
 	_render_player_hand()
 	_update_table_ui()
 	print("DEBUG: pass cycle draw end deck=%d" % deck.cards.size())
+
+
+func _ensure_deck_has_cards_for_draw() -> bool:
+	if not deck:
+		_log_error_and_end_hand("Cannot draw cards: deck is missing.")
+		return false
+
+	if not deck.cards.is_empty():
+		return true
+
+	return _recycle_play_pile_into_deck()
+
+
+func _recycle_play_pile_into_deck() -> bool:
+	if play_pile.is_empty() and active_card_data:
+		play_pile.append(active_card_data)
+
+	var active_card = active_card_data if active_card_data else (play_pile[play_pile.size() - 1] if not play_pile.is_empty() else null)
+	if not active_card:
+		_set_feedback("No cards left to draw. Hand is stalemated.")
+		print("No cards left to draw. Hand is stalemated.")
+		_end_hand_stalemate()
+		return false
+
+	var recycled_cards: Array = []
+	for index in range(play_pile.size() - 1):
+		recycled_cards.append(play_pile[index])
+
+	if recycled_cards.is_empty():
+		_set_feedback("No cards left to draw. Hand is stalemated.")
+		print("No cards left to draw. Hand is stalemated.")
+		play_pile = [active_card]
+		_end_hand_stalemate()
+		return false
+
+	_set_feedback("Deck empty — reshuffling play pile.")
+	print("Deck empty — reshuffling play pile.")
+	deck.cards.append_array(recycled_cards)
+	deck.shuffle()
+	play_pile = [active_card]
+	_set_active_card(active_card)
+	_update_table_ui()
+	return true
 
 
 func _get_active_player_count() -> int:
@@ -961,32 +1252,39 @@ func _check_empty_hand_after_play(player_index: int) -> bool:
 	if not hands[player_index].is_empty():
 		return false
 
-	print("WIN CHECK: %s hand_count=0" % PLAYER_NAMES[player_index])
-
 	if player_index == 0:
+		print("WIN CHECK: %s hand_count=0" % PLAYER_NAMES[player_index])
 		_resolve_player_empty_hand()
 		return true
 
+	print("WIN CHECK: %s hand_count=0" % PLAYER_NAMES[player_index])
 	waiting_for_bot = false
 	_end_hand(player_index)
 	return true
 
 
 func _resolve_player_empty_hand() -> void:
-	if player_has_tapped:
-		player_has_tapped = false
+	if player_tap_armed and player_turn_counter == tap_expires_on_player_turn_counter:
+		_reset_player_tap()
 		_end_hand(0)
 		return
 
-	player_has_tapped = false
-	var penalty_cards: Array = deck.deal(1) if deck else []
+	var penalty_message := "Forgot to TAP — draw 1."
+	if player_tap_armed and player_turn_counter == tap_declared_turn_counter:
+		penalty_message = "You tapped too late — draw 1."
+
+	_reset_player_tap()
+	if not _ensure_deck_has_cards_for_draw():
+		return
+
+	var penalty_cards: Array = deck.deal(1)
 	if penalty_cards.is_empty():
 		_set_feedback("Forgot to TAP — no penalty card available.")
 		_end_hand_stalemate()
 		return
 
 	hands[0].append(penalty_cards[0])
-	_set_feedback("Forgot to TAP — draw 1.")
+	_set_feedback(penalty_message)
 	_render_player_hand()
 	_set_phase(PHASE_PLAYER_TURN)
 	_update_table_ui()
@@ -996,22 +1294,273 @@ func _end_hand(winner_index: int) -> void:
 	hand_over = true
 	waiting_for_bot = false
 	if winner_index == 0:
-		player_has_tapped = false
+		_reset_player_tap()
 	_set_phase(PHASE_HAND_OVER)
 	current_player_index = winner_index
+	hand_winner_name = PLAYER_NAMES[winner_index]
+	last_hand_chips_awarded = _award_hand_rewards(winner_index)
 	if winner_index == 0:
-		_set_feedback("You win the pot.")
+		_set_feedback("You won the hand.")
 	else:
-		_set_feedback("%s wins the hand." % PLAYER_NAMES[winner_index])
+		_set_feedback("%s won the hand." % PLAYER_NAMES[winner_index])
+	_set_feedback("%s gains %d points and £%d." % [hand_winner_name, last_hand_points_awarded, last_hand_chips_awarded])
+
+	if current_hand_number >= total_hands:
+		_complete_championship()
 
 	_update_table_ui()
+	call_deferred("_emit_hand_finished")
 
 
 func _end_hand_stalemate() -> void:
 	hand_over = true
+	hand_winner_name = ""
+	last_hand_points_awarded = 0
+	last_hand_chips_awarded = 0
 	_set_phase(PHASE_HAND_OVER)
 	_set_feedback("Hand ends in stalemate.")
+	if current_hand_number >= total_hands:
+		_complete_championship()
 	_update_table_ui()
+	call_deferred("_emit_hand_finished")
+
+
+func _award_hand_rewards(winner_index: int) -> int:
+	if winner_index < 0 or winner_index >= PLAYER_NAMES.size():
+		return 0
+
+	var remaining_card_chips := 0
+	for player_index in range(hands.size()):
+		if player_index == winner_index:
+			continue
+
+		remaining_card_chips += _get_hand_score(hands[player_index])
+
+	var winner_name: String = PLAYER_NAMES[winner_index]
+	last_hand_points_awarded = championship_win_points
+	var chips_awarded := pot + remaining_card_chips
+	player_points[winner_name] = int(player_points[winner_name]) + championship_win_points
+	player_chips[winner_name] = int(player_chips[winner_name]) + chips_awarded
+	return chips_awarded
+
+
+func _get_hand_score(hand: Array) -> int:
+	var score := 0
+	for card_data in hand:
+		score += _get_card_score(card_data)
+
+	return score
+
+
+func _get_card_score(card_data) -> int:
+	if not card_data:
+		return 0
+
+	match str(card_data.rank):
+		"A":
+			return 1
+		"J", "Q", "K":
+			return 10
+		_:
+			return int(card_data.rank)
+
+
+func _complete_championship() -> void:
+	championship_complete = true
+	var ranked_players := _get_ranked_players()
+	if not ranked_players.is_empty():
+		champion_name = ranked_players[0]["name"]
+		_set_feedback("Championship complete. Champion: %s." % champion_name)
+
+
+func _emit_hand_finished() -> void:
+	hand_finished.emit(_get_hand_result())
+
+
+func _get_hand_result() -> Dictionary:
+	return {
+		"mode": game_mode,
+		"hand_number": current_hand_number,
+		"total_hands": total_hands,
+		"next_hand_number": current_hand_number + 1,
+		"winner": hand_winner_name,
+		"points_gained": last_hand_points_awarded,
+		"chips_gained": last_hand_chips_awarded,
+		"player_points": player_points.duplicate(true),
+		"player_chips": player_chips.duplicate(true),
+		"remaining_cards": _get_remaining_card_counts(),
+		"ranked_players": _get_ranked_players(),
+		"championship_complete": championship_complete,
+		"champion": champion_name,
+	}
+
+
+func _get_remaining_card_counts() -> Dictionary:
+	var remaining_cards := {}
+	for player_index in range(PLAYER_NAMES.size()):
+		remaining_cards[PLAYER_NAMES[player_index]] = hands[player_index].size()
+
+	return remaining_cards
+
+
+func _get_ranked_players() -> Array:
+	var ranked_players: Array = []
+	for player_name in PLAYER_NAMES:
+		ranked_players.append({
+			"name": player_name,
+			"points": int(player_points[player_name]),
+			"chips": int(player_chips[player_name]),
+		})
+
+	ranked_players.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a["points"]) == int(b["points"]):
+			return int(a["chips"]) > int(b["chips"])
+
+		return int(a["points"]) > int(b["points"])
+	)
+	return ranked_players
+
+
+func _get_ordinal(number: int) -> String:
+	match number:
+		1:
+			return "1st"
+		2:
+			return "2nd"
+		3:
+			return "3rd"
+		_:
+			return "%dth" % number
+
+
+func _reset_player_tap() -> void:
+	player_tap_armed = false
+	tap_declared_turn_counter = -1
+	tap_expires_on_player_turn_counter = -1
+
+
+func _expire_player_tap_after_turn_if_needed() -> void:
+	if not player_tap_armed:
+		return
+
+	if player_turn_counter < tap_expires_on_player_turn_counter:
+		return
+
+	if hands[0].is_empty():
+		return
+
+	_reset_player_tap()
+	_set_feedback("TAP expired.")
+
+
+func _update_tap_status() -> void:
+	var tap_status_label := get_node_or_null(tap_status_label_path) as Label
+	if not tap_status_label:
+		return
+
+	tap_status_label.visible = player_tap_armed and not hand_over
+	tap_status_label.text = "TAP ARMED" if player_tap_armed else ""
+
+
+func _update_scoreboard() -> void:
+	var scoreboard_label := get_node_or_null(scoreboard_label_path) as Label
+	if not scoreboard_label:
+		return
+
+	var scoreboard_panel := scoreboard_label.get_parent() as CanvasItem
+	if scoreboard_panel:
+		scoreboard_panel.visible = not use_external_results_screen and game_mode == MODE_GRAND_PRIX
+
+	if use_external_results_screen or game_mode != MODE_GRAND_PRIX:
+		scoreboard_label.text = ""
+		return
+
+	var lines: Array[String] = ["CHAMPIONSHIP STANDINGS"]
+	for player_name in PLAYER_NAMES:
+		lines.append("")
+		lines.append("%s:" % player_name)
+		lines.append("Points: %d" % int(player_points[player_name]))
+		lines.append("Chips: £%d" % int(player_chips[player_name]))
+
+	scoreboard_label.text = "\n".join(lines)
+
+
+func _update_hand_counter() -> void:
+	var hand_counter_label := get_node_or_null(hand_counter_label_path) as Label
+	if not hand_counter_label:
+		return
+
+	if championship_complete:
+		hand_counter_label.text = "CHAMPIONSHIP COMPLETE"
+	elif game_mode == MODE_GRAND_PRIX:
+		hand_counter_label.text = "HAND %d / %d   POT £%d" % [current_hand_number, total_hands, pot]
+	else:
+		hand_counter_label.text = "QUICK PLAY   POT £%d" % pot
+
+
+func _update_hand_summary() -> void:
+	var summary_label := get_node_or_null(hand_summary_label_path) as Label
+	if not summary_label:
+		return
+
+	var summary_panel := summary_label.get_parent() as CanvasItem
+	if summary_panel:
+		summary_panel.visible = hand_over and not use_external_results_screen
+
+	if not hand_over or use_external_results_screen:
+		summary_label.text = ""
+		return
+
+	var lines: Array[String] = []
+	if championship_complete:
+		lines.append("CHAMPIONSHIP COMPLETE")
+		lines.append("")
+	elif hand_over:
+		lines.append("HAND OVER")
+		lines.append("")
+
+	if not hand_winner_name.is_empty():
+		lines.append("Winner: %s" % hand_winner_name)
+		lines.append("Championship points: +%d" % last_hand_points_awarded)
+		lines.append("Chips gained: £%d" % last_hand_chips_awarded)
+		lines.append("")
+	else:
+		lines.append("Winner: Stalemate")
+		lines.append("Championship points: +0")
+		lines.append("Chips gained: £0")
+		lines.append("")
+
+	if championship_complete:
+		lines.append("Final Standings")
+		var ranked_players := _get_ranked_players()
+		for index in range(ranked_players.size()):
+			var player = ranked_players[index]
+			lines.append("%s %s: %d pts, £%d" % [
+				_get_ordinal(index + 1),
+				player["name"],
+				int(player["points"]),
+				int(player["chips"]),
+			])
+
+		lines.append("")
+		lines.append("CHAMPION:")
+		lines.append(champion_name)
+		lines.append("")
+
+	lines.append("Remaining cards:")
+	for player_index in range(PLAYER_NAMES.size()):
+		lines.append("%s: %d" % [PLAYER_NAMES[player_index], hands[player_index].size()])
+
+	summary_label.text = "\n".join(lines)
+
+
+func _update_win_notification() -> void:
+	var win_label := get_node_or_null(win_notification_label_path) as Label
+	if not win_label:
+		return
+
+	win_label.visible = false
+	win_label.text = ""
 
 
 func _describe_played_cards(played_cards: Array) -> String:
@@ -1052,11 +1601,17 @@ func _plural_rank(rank_name: String, count: int) -> String:
 
 
 func _on_card_hover_started(card: Node2D) -> void:
+	if modal_open:
+		return
+
 	focused_card = card
 	_apply_focus_offsets(_get_focus_anchor_card())
 
 
 func _on_card_hover_ended(card: Node2D) -> void:
+	if modal_open:
+		return
+
 	if card != focused_card:
 		return
 
@@ -1065,6 +1620,9 @@ func _on_card_hover_ended(card: Node2D) -> void:
 
 
 func _on_card_clicked(card: Node2D) -> void:
+	if modal_open:
+		return
+
 	if hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0:
 		return
 

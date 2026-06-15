@@ -38,6 +38,7 @@ signal selected_ended(card: Node2D)
 @export var hover_duration: float = 0.08
 @export var hover_z_index_boost: int = 100
 @export var selected_z_index_boost: int = 120
+@export var debug_rank_regions: bool = false
 @export var drag_scale_multiplier: float = 1.12
 @export var drag_z_index_boost: int = 200
 @export var snap_duration: float = 0.12
@@ -69,6 +70,7 @@ var is_selected := false
 var is_dragging := false
 var is_played := false
 var is_hand_controlled := false
+var is_input_blocked := false
 var played_position := Vector2.ZERO
 
 @onready var shadow: Sprite2D = $Shadow
@@ -135,6 +137,10 @@ func _process(_delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
 
+	if is_input_blocked:
+		set_hover_active(false)
+		return
+
 	if is_hand_controlled:
 		return
 
@@ -153,6 +159,12 @@ func is_global_point_over_card(global_point: Vector2) -> bool:
 
 func set_hand_controlled(hand_controlled: bool) -> void:
 	is_hand_controlled = hand_controlled
+
+
+func set_input_blocked(input_blocked: bool) -> void:
+	is_input_blocked = input_blocked
+	if is_input_blocked:
+		set_hover_active(false)
 
 
 func set_hover_active(hovering: bool) -> void:
@@ -294,7 +306,8 @@ func _update_card_visual() -> void:
 	var suit_color := get_suit_color(normalized_suit)
 	var rank_top_region := _get_rank_top_region(rank_index)
 	var rank_bottom_region := _get_rank_bottom_region(rank_index)
-	print("Rank:", normalized_rank, " Index:", rank_index, " Top:", rank_top_region, " Bottom:", rank_bottom_region)
+	if debug_rank_regions:
+		print("Rank:", normalized_rank, " Index:", rank_index, " Top:", rank_top_region, " Bottom:", rank_bottom_region)
 
 	var top_sprite := _get_rank_top_sprite()
 	if top_sprite:
