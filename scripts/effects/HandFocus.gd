@@ -21,6 +21,7 @@ const CardScene := preload("res://scenes/cards/Card.tscn")
 @export var rank_choice_container_path: NodePath = ^"../RankChoiceButtons"
 @export var max_feedback_messages: int = 4
 @export var ante_amount: int = 1
+@export var max_auto_actions_per_hand: int = 100
 
 const PLAYER_NAMES := ["You", "Bot 1", "Bot 2", "Bot 3"]
 const PHASE_DEALING := "DEALING"
@@ -28,13 +29,15 @@ const PHASE_PLAYER_TURN := "PLAYER_TURN"
 const PHASE_PLAYER_DISCARD_CHOICE := "PLAYER_DISCARD_CHOICE"
 const PHASE_BOT_TURN := "BOT_TURN"
 const PHASE_HAND_OVER := "HAND_OVER"
-const MAX_AUTO_TURN_ACTIONS := 50
 
 var cards: Array[Node2D] = []
 var focused_card: Node2D
 var selected_card: Node2D
+var selected_cards: Array = []
 var pending_drag_card: Node2D
 var dragged_card: Node2D
+var dragged_stack: Array = []
+var drag_stack_offsets := {}
 var drag_start_global_position := Vector2.ZERO
 var drag_card_global_offset := Vector2.ZERO
 var deck: RefCounted
@@ -50,9 +53,11 @@ var auto_turn_action_count := 0
 var game_phase := PHASE_HAND_OVER
 var hand_over := false
 var waiting_for_bot := false
+var player_has_tapped := false
 
 
 func _ready() -> void:
+	print("DEBUG: _ready start")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	deck = DeckScript.new()
 
@@ -89,16 +94,22 @@ func _ready() -> void:
 
 	_connect_action_buttons()
 	start_new_hand()
+	print("DEBUG: _ready end")
 
 
 func start_new_hand() -> void:
+	print("DEBUG: start_new_hand start")
 	_set_phase(PHASE_DEALING)
 	hand_over = false
 	waiting_for_bot = false
 	pending_drag_card = null
 	dragged_card = null
+	dragged_stack.clear()
+	drag_stack_offsets.clear()
 	selected_card = null
+	_clear_selected_cards()
 	focused_card = null
+	player_has_tapped = false
 	consecutive_passes = 0
 	auto_turn_action_count = 0
 	_clear_rank_choice_buttons()
@@ -112,18 +123,22 @@ func start_new_hand() -> void:
 
 	deck.reset()
 	deck.shuffle()
+	print("DEBUG: deck reset/shuffle count=%d" % deck.cards.size())
 
 	for index in range(hands.size()):
 		hands[index] = deck.deal(5)
+		print("DEBUG: dealt player=%d count=%d deck=%d" % [index, hands[index].size(), deck.cards.size()])
 
 	var drawn_active_cards: Array = deck.deal(1)
 	if not drawn_active_cards.is_empty():
 		_set_active_card(drawn_active_cards[0])
+		print("DEBUG: active card dealt %s %s deck=%d" % [active_card_data.rank, active_card_data.suit, deck.cards.size()])
 
 	_render_player_hand()
 	_set_feedback("Cards dealt.")
 	_set_feedback("Active card drawn.")
 	_begin_current_turn()
+	print("DEBUG: start_new_hand end phase=%s current_player=%d" % [game_phase, current_player_index])
 
 
 func deal_player_hand() -> void:
@@ -149,9 +164,11 @@ func _begin_current_turn() -> void:
 
 	if current_player_index == 0:
 		auto_turn_action_count = 0
+		waiting_for_bot = false
 		_set_phase(PHASE_PLAYER_TURN)
 		_set_turn_feedback()
 		_update_table_ui()
+		print("DEBUG: automatic processing stopped at PLAYER_TURN")
 		return
 
 	_set_phase(PHASE_BOT_TURN)
@@ -178,6 +195,7 @@ func _set_active_card(card_data) -> void:
 		return
 
 	active_card_data = card_data
+	print("DEBUG: set active card %s %s" % [active_card_data.rank, active_card_data.suit])
 
 	var active_card := _get_active_card_node()
 	if not active_card:
@@ -385,7 +403,7 @@ func _begin_pending_drag() -> void:
 
 func _update_drag_motion() -> void:
 	if is_instance_valid(dragged_card):
-		dragged_card.set_drag_global_position(get_global_mouse_position() + drag_card_global_offset)
+		_set_dragged_stack_global_position(get_global_mouse_position() + drag_card_global_offset)
 		get_viewport().set_input_as_handled()
 		return
 
@@ -396,25 +414,38 @@ func _update_drag_motion() -> void:
 		return
 
 	_start_drag(pending_drag_card)
-	dragged_card.set_drag_global_position(get_global_mouse_position() + drag_card_global_offset)
+	_set_dragged_stack_global_position(get_global_mouse_position() + drag_card_global_offset)
 	get_viewport().set_input_as_handled()
 
 
 func _start_drag(card: Node2D) -> void:
 	dragged_card = card
 	pending_drag_card = null
+	dragged_stack = selected_cards.duplicate() if selected_cards.has(card) else [card]
+	drag_stack_offsets.clear()
 
 	if is_instance_valid(focused_card) and focused_card != dragged_card and focused_card.has_method("set_hover_active"):
 		focused_card.set_hover_active(false)
 
 	focused_card = dragged_card
-	if dragged_card.has_method("set_hover_active"):
-		dragged_card.set_hover_active(true)
-	if dragged_card.has_method("set_drag_active"):
-		dragged_card.set_drag_active(true)
+	for stack_card in dragged_stack:
+		drag_stack_offsets[stack_card] = stack_card.global_position - dragged_card.global_position
+		if stack_card.has_method("set_hover_active"):
+			stack_card.set_hover_active(stack_card == dragged_card)
+		if stack_card.has_method("set_drag_active"):
+			stack_card.set_drag_active(true)
 
-	_set_selected_card(dragged_card)
 	_apply_focus_offsets(dragged_card)
+
+
+func _set_dragged_stack_global_position(anchor_global_position: Vector2) -> void:
+	for stack_card in dragged_stack:
+		if not is_instance_valid(stack_card):
+			continue
+
+		var offset: Vector2 = drag_stack_offsets.get(stack_card, Vector2.ZERO)
+		if stack_card.has_method("set_drag_global_position"):
+			stack_card.set_drag_global_position(anchor_global_position + offset)
 
 
 func _finish_pointer_interaction() -> void:
@@ -434,18 +465,46 @@ func _finish_pointer_interaction() -> void:
 
 func _finish_drag() -> void:
 	var card := dragged_card
+	var stack := dragged_stack.duplicate()
 	dragged_card = null
 	pending_drag_card = null
+	dragged_stack.clear()
+	drag_stack_offsets.clear()
+	if stack.is_empty() and is_instance_valid(card):
+		stack = [card]
 
 	if _is_global_point_in_play_zone(get_global_mouse_position()):
-		_finish_player_card_drop(card)
+		if selected_cards.has(card):
+			_finish_player_chain_drop(stack)
+		else:
+			_finish_player_card_drop(card)
 	else:
-		_set_selected_card(null)
-		if card.has_method("snap_to_hand"):
-			card.snap_to_hand()
+		for stack_card in stack:
+			if stack_card.has_method("snap_to_hand"):
+				stack_card.snap_to_hand()
+		if selected_cards.has(card):
+			_clear_selected_cards()
+		else:
+			_set_selected_card(null)
 
 	_set_focused_card(null)
 	_apply_focus_offsets(_get_focus_anchor_card())
+
+
+func _finish_player_chain_drop(stack: Array) -> void:
+	if game_phase != PHASE_PLAYER_TURN:
+		_snap_cards_to_hand(stack)
+		_set_feedback("Chains can only start on your turn.")
+		return
+
+	var chain_cards := _get_selected_chain_data()
+	if chain_cards.is_empty() or not _validate_card_chain(chain_cards):
+		_snap_cards_to_hand(stack)
+		_clear_selected_cards()
+		_set_feedback("Invalid chain.")
+		return
+
+	_play_valid_player_chain(chain_cards)
 
 
 func _finish_player_card_drop(card: Node2D) -> void:
@@ -487,8 +546,8 @@ func _play_player_opening_card(card: Node2D, hand_index: int, played_card) -> vo
 	print("Card played: %s %s" % [played_card.rank, played_card.suit])
 	_render_player_hand()
 
-	if hands[0].is_empty():
-		_set_feedback("Tap to win!")
+	if _check_empty_hand_after_play(0):
+		_update_table_ui()
 	else:
 		_set_phase(PHASE_PLAYER_DISCARD_CHOICE)
 		_set_feedback("Discard any card to set the new active card, or end turn.")
@@ -503,8 +562,73 @@ func _play_player_discard_card(card: Node2D, hand_index: int, played_card) -> vo
 	_set_feedback("Discarded %s %s." % [played_card.rank, played_card.suit])
 	print("Card discarded: %s %s" % [played_card.rank, played_card.suit])
 	_render_player_hand()
+	if _check_empty_hand_after_play(0):
+		return
+
 	_advance_turn()
 	_update_table_ui()
+
+
+func _get_selected_chain_data() -> Array:
+	var chain_cards: Array = []
+	for card in selected_cards:
+		var hand_index := cards.find(card)
+		if hand_index < 0 or hand_index >= hands[0].size():
+			return []
+
+		chain_cards.append(hands[0][hand_index])
+
+	return chain_cards
+
+
+func _validate_card_chain(chain_cards: Array) -> bool:
+	if chain_cards.is_empty() or not active_card_data:
+		return false
+
+	if not cards_match(chain_cards[0], active_card_data):
+		return false
+
+	for index in range(1, chain_cards.size()):
+		if not cards_match(chain_cards[index], chain_cards[index - 1]):
+			return false
+
+	return true
+
+
+func _play_valid_player_chain(chain_cards: Array) -> void:
+	var chain_description := _describe_card_chain(chain_cards)
+	var final_card = chain_cards[chain_cards.size() - 1]
+	_remove_selected_cards_from_player_hand()
+	consecutive_passes = 0
+	_set_active_card(final_card)
+	_set_feedback("Played chain: %s." % chain_description)
+	print("Played chain: %s" % chain_description)
+	_clear_selected_cards()
+	_render_player_hand()
+	if _check_empty_hand_after_play(0):
+		return
+
+	_advance_turn()
+	_update_table_ui()
+
+
+func _remove_selected_cards_from_player_hand() -> void:
+	var indices: Array[int] = []
+	for card in selected_cards:
+		var hand_index := cards.find(card)
+		if hand_index >= 0 and hand_index < hands[0].size():
+			indices.append(hand_index)
+
+	indices.sort()
+	indices.reverse()
+	for hand_index in indices:
+		_remove_card_from_hand(0, hand_index)
+
+
+func _snap_cards_to_hand(stack: Array) -> void:
+	for card in stack:
+		if is_instance_valid(card) and card.has_method("snap_to_hand"):
+			card.snap_to_hand()
 
 
 func _get_play_zone() -> CanvasItem:
@@ -578,7 +702,7 @@ func _update_table_ui() -> void:
 
 	var tap_button := get_node_or_null(tap_button_path) as Button
 	if tap_button:
-		tap_button.disabled = hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0 or not hands[0].is_empty()
+		tap_button.disabled = hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0 or hands[0].is_empty() or player_has_tapped
 
 	var end_turn_button := get_node_or_null(end_turn_button_path) as Button
 	if end_turn_button:
@@ -656,12 +780,13 @@ func _on_tap_button_pressed() -> void:
 	if hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0:
 		return
 
-	if not hands[0].is_empty():
-		_set_feedback("You can only TAP with an empty hand.")
+	if hands[0].is_empty():
 		_update_table_ui()
 		return
 
-	_end_hand(0)
+	player_has_tapped = true
+	_set_feedback("TAP called — play out to win.")
+	_update_table_ui()
 
 
 func _on_end_turn_button_pressed() -> void:
@@ -674,18 +799,24 @@ func _on_end_turn_button_pressed() -> void:
 
 
 func _run_bot_turns() -> void:
+	print("DEBUG: bot turn loop requested phase=%s player=%d waiting=%s" % [game_phase, current_player_index, waiting_for_bot])
 	if waiting_for_bot or hand_over or game_phase != PHASE_BOT_TURN or current_player_index == 0:
 		return
 
 	waiting_for_bot = true
+	print("DEBUG: bot turn loop start")
 	while not hand_over and game_phase == PHASE_BOT_TURN and current_player_index != 0:
 		if not _record_auto_turn_action():
 			break
 
 		await get_tree().create_timer(0.25).timeout
+		if hand_over or game_phase == PHASE_HAND_OVER:
+			break
+
 		_take_bot_turn(current_player_index)
 
 	waiting_for_bot = false
+	print("DEBUG: bot turn loop end phase=%s player=%d actions=%d" % [game_phase, current_player_index, auto_turn_action_count])
 	_update_table_ui()
 
 
@@ -693,46 +824,55 @@ func _take_bot_turn(player_index: int) -> void:
 	if hand_over or game_phase != PHASE_BOT_TURN:
 		return
 
+	print("DEBUG: bot turn start player=%d hand=%d active=%s %s" % [player_index, hands[player_index].size(), active_card_data.rank, active_card_data.suit])
 	if _hand_has_match(hands[player_index], active_card_data):
 		var match_index := _get_first_matching_card_index(hands[player_index], active_card_data)
 		var matched_card = _remove_card_from_hand(player_index, match_index)
 		consecutive_passes = 0
 		_set_active_card(matched_card)
 		_set_feedback("%s played %s %s." % [PLAYER_NAMES[player_index], matched_card.rank, matched_card.suit])
-		if hands[player_index].is_empty():
-			_end_hand(player_index)
+		if _check_empty_hand_after_play(player_index):
 			return
 
 		var discard_index: int = randi() % hands[player_index].size()
 		var discard_card = _remove_card_from_hand(player_index, discard_index)
 		_set_active_card(discard_card)
 		_set_feedback("%s discarded %s %s." % [PLAYER_NAMES[player_index], discard_card.rank, discard_card.suit])
+		if _check_empty_hand_after_play(player_index):
+			return
 	else:
 		_set_feedback("%s passed." % PLAYER_NAMES[player_index])
 		consecutive_passes += 1
 
+	print("DEBUG: bot turn end player=%d consecutive_passes=%d" % [player_index, consecutive_passes])
 	_advance_turn()
 	_update_table_ui()
 
 
 func _record_auto_turn_action() -> bool:
 	auto_turn_action_count += 1
-	if auto_turn_action_count <= MAX_AUTO_TURN_ACTIONS:
+	if auto_turn_action_count <= max_auto_actions_per_hand:
 		return true
 
 	var message := "Safety stop: possible infinite turn loop"
-	print(message)
+	print("SAFETY STOP: auto turn loop")
 	_set_feedback(message)
-	_end_hand_stalemate()
+	waiting_for_bot = false
+	current_player_index = 0
+	_set_phase(PHASE_PLAYER_TURN)
+	_set_turn_feedback()
+	_update_table_ui()
 	return false
 
 
 func _advance_turn() -> void:
+	print("DEBUG: advance_turn from player=%d phase=%s" % [current_player_index, game_phase])
 	current_player_index = (current_player_index + 1) % PLAYER_NAMES.size()
 	_resolve_pass_cycle_if_needed()
 	if hand_over:
 		return
 
+	print("DEBUG: advance_turn to player=%d" % current_player_index)
 	_begin_current_turn()
 
 
@@ -742,6 +882,7 @@ func _resolve_pass_cycle_if_needed() -> void:
 
 	_set_feedback("Nobody could play. Drawing cards.")
 	print("Nobody could play. Drawing cards.")
+	print("DEBUG: pass cycle draw start deck=%d" % (deck.cards.size() if deck else -1))
 
 	if not deck:
 		_log_error_and_end_hand("Cannot draw cards: deck is missing.")
@@ -767,6 +908,7 @@ func _resolve_pass_cycle_if_needed() -> void:
 	consecutive_passes = 0
 	_render_player_hand()
 	_update_table_ui()
+	print("DEBUG: pass cycle draw end deck=%d" % deck.cards.size())
 
 
 func _get_active_player_count() -> int:
@@ -812,14 +954,55 @@ func _remove_card_from_hand(player_index: int, card_index: int):
 	return hands[player_index].pop_at(card_index)
 
 
+func _check_empty_hand_after_play(player_index: int) -> bool:
+	if player_index < 0 or player_index >= hands.size():
+		return false
+
+	if not hands[player_index].is_empty():
+		return false
+
+	print("WIN CHECK: %s hand_count=0" % PLAYER_NAMES[player_index])
+
+	if player_index == 0:
+		_resolve_player_empty_hand()
+		return true
+
+	waiting_for_bot = false
+	_end_hand(player_index)
+	return true
+
+
+func _resolve_player_empty_hand() -> void:
+	if player_has_tapped:
+		player_has_tapped = false
+		_end_hand(0)
+		return
+
+	player_has_tapped = false
+	var penalty_cards: Array = deck.deal(1) if deck else []
+	if penalty_cards.is_empty():
+		_set_feedback("Forgot to TAP — no penalty card available.")
+		_end_hand_stalemate()
+		return
+
+	hands[0].append(penalty_cards[0])
+	_set_feedback("Forgot to TAP — draw 1.")
+	_render_player_hand()
+	_set_phase(PHASE_PLAYER_TURN)
+	_update_table_ui()
+
+
 func _end_hand(winner_index: int) -> void:
 	hand_over = true
+	waiting_for_bot = false
+	if winner_index == 0:
+		player_has_tapped = false
 	_set_phase(PHASE_HAND_OVER)
 	current_player_index = winner_index
 	if winner_index == 0:
 		_set_feedback("You win the pot.")
 	else:
-		_set_feedback("%s wins the pot." % PLAYER_NAMES[winner_index])
+		_set_feedback("%s wins the hand." % PLAYER_NAMES[winner_index])
 
 	_update_table_ui()
 
@@ -838,6 +1021,17 @@ func _describe_played_cards(played_cards: Array) -> String:
 	var rank_name: String = played_cards[0].rank
 	var rank_label := _plural_rank(rank_name, played_cards.size())
 	return "%d %s" % [played_cards.size(), rank_label]
+
+
+func _describe_card_chain(chain_cards: Array) -> String:
+	if chain_cards.is_empty():
+		return "empty"
+
+	var labels: Array[String] = []
+	for card_data in chain_cards:
+		labels.append("%s %s" % [card_data.rank, card_data.suit])
+
+	return " -> ".join(labels)
 
 
 func _plural_rank(rank_name: String, count: int) -> String:
@@ -871,10 +1065,72 @@ func _on_card_hover_ended(card: Node2D) -> void:
 
 
 func _on_card_clicked(card: Node2D) -> void:
-	if card == selected_card:
-		_set_selected_card(null)
-	else:
-		_set_selected_card(card)
+	if hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0:
+		return
+
+	if selected_cards.has(card):
+		_remove_card_from_selection(card)
+		return
+
+	_add_card_to_selection(card)
+
+
+func _add_card_to_selection(card: Node2D) -> void:
+	var hand_index := cards.find(card)
+	if hand_index < 0 or hand_index >= hands[0].size():
+		return
+
+	var card_data = hands[0][hand_index]
+	var previous_card_data = active_card_data if selected_cards.is_empty() else _get_card_data_for_node(selected_cards[selected_cards.size() - 1])
+	if not previous_card_data or not cards_match(card_data, previous_card_data):
+		_set_feedback("That card does not continue the chain.")
+		print("Rejected chain card: %s %s" % [card_data.rank, card_data.suit])
+		return
+
+	selected_cards.append(card)
+	selected_card = card
+	if card.has_method("set_selected_active"):
+		card.set_selected_active(true)
+
+	var chain_description := _describe_card_chain(_get_selected_chain_data())
+	_set_feedback("Selected chain: %s." % chain_description)
+	print("Selected chain: %s" % chain_description)
+	_apply_focus_offsets(_get_focus_anchor_card())
+
+
+func _remove_card_from_selection(card: Node2D) -> void:
+	var selection_index := selected_cards.find(card)
+	if selection_index == -1:
+		return
+
+	var removed_cards := selected_cards.slice(selection_index)
+	for removed_card in removed_cards:
+		if removed_card.has_method("set_selected_active"):
+			removed_card.set_selected_active(false)
+
+	selected_cards.resize(selection_index)
+
+	selected_card = selected_cards[selected_cards.size() - 1] if not selected_cards.is_empty() else null
+	var chain_description := _describe_card_chain(_get_selected_chain_data())
+	print("Selected chain: %s" % chain_description)
+	_apply_focus_offsets(_get_focus_anchor_card())
+
+
+func _clear_selected_cards() -> void:
+	for card in selected_cards:
+		if is_instance_valid(card) and card.has_method("set_selected_active"):
+			card.set_selected_active(false)
+
+	selected_cards.clear()
+	selected_card = null
+
+
+func _get_card_data_for_node(card: Node2D):
+	var hand_index := cards.find(card)
+	if hand_index < 0 or hand_index >= hands[0].size():
+		return null
+
+	return hands[0][hand_index]
 
 
 func _set_selected_card(card: Node2D) -> void:

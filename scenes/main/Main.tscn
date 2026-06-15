@@ -86,33 +86,50 @@ theme_override_font_sizes/font_size = 28
 text = "YOUR TURN"
 horizontal_alignment = 1
 
-[node name="ActionButtons" type="HBoxContainer" parent="." unique_id=737362497]
-offset_left = 95.0
-offset_top = 600.0
-offset_right = 499.0
-offset_bottom = 638.0
-theme_override_constants/separation = 12
-alignment = 1
+[node name="LeftActionStack" type="Control" parent="." unique_id=737362497]
+offset_left = 170.0
+offset_top = 560.0
+offset_right = 290.0
+offset_bottom = 690.0
 
-[node name="PlayButton" type="Button" parent="ActionButtons" unique_id=433871425]
-layout_mode = 2
+[node name="PlayButton" type="Button" parent="LeftActionStack" unique_id=433871425]
+layout_mode = 1
+offset_right = 120.0
+offset_bottom = 34.0
 text = "PLAY"
 
-[node name="PassButton" type="Button" parent="ActionButtons" unique_id=480883019]
-layout_mode = 2
+[node name="PassButton" type="Button" parent="LeftActionStack" unique_id=480883019]
+layout_mode = 1
+offset_top = 48.0
+offset_right = 120.0
+offset_bottom = 82.0
 text = "PASS"
 
-[node name="TapButton" type="Button" parent="ActionButtons" unique_id=289326295]
-layout_mode = 2
+[node name="NewHandButton" type="Button" parent="LeftActionStack" unique_id=1143905656]
+layout_mode = 1
+offset_top = 96.0
+offset_right = 120.0
+offset_bottom = 130.0
+text = "NEW HAND"
+
+[node name="RightActionStack" type="Control" parent="." unique_id=1511420592]
+offset_left = 1040.0
+offset_top = 560.0
+offset_right = 1160.0
+offset_bottom = 642.0
+
+[node name="TapButton" type="Button" parent="RightActionStack" unique_id=289326295]
+layout_mode = 1
+offset_right = 120.0
+offset_bottom = 34.0
 text = "TAP"
 
-[node name="EndTurnButton" type="Button" parent="ActionButtons" unique_id=2124577814]
-layout_mode = 2
+[node name="EndTurnButton" type="Button" parent="RightActionStack" unique_id=2124577814]
+layout_mode = 1
+offset_top = 48.0
+offset_right = 120.0
+offset_bottom = 82.0
 text = "END TURN"
-
-[node name="NewHandButton" type="Button" parent="ActionButtons" unique_id=1143905656]
-layout_mode = 2
-text = "NEW HAND"
 
 [node name="RankChoiceButtons" type="HBoxContainer" parent="." unique_id=1094287847]
 visible = false
@@ -153,6 +170,11 @@ text = "Cards dealt. Active card drawn."
 [node name="PlayerHand" type="Node2D" parent="." unique_id=294880449]
 position = Vector2(0, 75)
 script = ExtResource("3_5xcut")
+play_button_path = NodePath("../LeftActionStack/PlayButton")
+pass_button_path = NodePath("../LeftActionStack/PassButton")
+tap_button_path = NodePath("../RightActionStack/TapButton")
+end_turn_button_path = NodePath("../RightActionStack/EndTurnButton")
+new_hand_button_path = NodePath("../LeftActionStack/NewHandButton")
 
 [node name="HandCard1" parent="PlayerHand" unique_id=1800681127 instance=ExtResource("2_q24mn")]
 position = Vector2(480, 559.99994)
