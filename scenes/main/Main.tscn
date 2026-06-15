@@ -106,6 +106,10 @@ text = "PASS"
 layout_mode = 2
 text = "TAP"
 
+[node name="EndTurnButton" type="Button" parent="ActionButtons" unique_id=2124577814]
+layout_mode = 2
+text = "END TURN"
+
 [node name="NewHandButton" type="Button" parent="ActionButtons" unique_id=1143905656]
 layout_mode = 2
 text = "NEW HAND"

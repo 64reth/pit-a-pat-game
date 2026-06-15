@@ -16,6 +16,7 @@ const CardScene := preload("res://scenes/cards/Card.tscn")
 @export var play_button_path: NodePath = ^"../ActionButtons/PlayButton"
 @export var pass_button_path: NodePath = ^"../ActionButtons/PassButton"
 @export var tap_button_path: NodePath = ^"../ActionButtons/TapButton"
+@export var end_turn_button_path: NodePath = ^"../ActionButtons/EndTurnButton"
 @export var new_hand_button_path: NodePath = ^"../ActionButtons/NewHandButton"
 @export var rank_choice_container_path: NodePath = ^"../RankChoiceButtons"
 @export var max_feedback_messages: int = 4
@@ -24,7 +25,7 @@ const CardScene := preload("res://scenes/cards/Card.tscn")
 const PLAYER_NAMES := ["You", "Bot 1", "Bot 2", "Bot 3"]
 const PHASE_DEALING := "DEALING"
 const PHASE_PLAYER_TURN := "PLAYER_TURN"
-const PHASE_CHOOSE_NEXT_RANK := "CHOOSE_NEXT_RANK"
+const PHASE_PLAYER_DISCARD_CHOICE := "PLAYER_DISCARD_CHOICE"
 const PHASE_BOT_TURN := "BOT_TURN"
 const PHASE_HAND_OVER := "HAND_OVER"
 const MAX_AUTO_TURN_ACTIONS := 50
@@ -49,7 +50,6 @@ var auto_turn_action_count := 0
 var game_phase := PHASE_HAND_OVER
 var hand_over := false
 var waiting_for_bot := false
-var rank_choice_locked := false
 
 
 func _ready() -> void:
@@ -101,7 +101,6 @@ func start_new_hand() -> void:
 	focused_card = null
 	consecutive_passes = 0
 	auto_turn_action_count = 0
-	rank_choice_locked = false
 	_clear_rank_choice_buttons()
 	pot = PLAYER_NAMES.size() * ante_amount
 	dealer_index = (dealer_index + 1) % PLAYER_NAMES.size()
@@ -139,9 +138,7 @@ func _set_phase(next_phase: String) -> void:
 	game_phase = next_phase
 	print("PHASE: %s -> %s" % [old_phase, game_phase])
 
-	if game_phase != PHASE_CHOOSE_NEXT_RANK:
-		rank_choice_locked = false
-		_clear_rank_choice_buttons()
+	_clear_rank_choice_buttons()
 
 
 func _begin_current_turn() -> void:
@@ -314,7 +311,7 @@ func _input(event: InputEvent) -> void:
 	if hand_over or current_player_index != 0:
 		return
 
-	if game_phase != PHASE_PLAYER_TURN:
+	if game_phase != PHASE_PLAYER_TURN and game_phase != PHASE_PLAYER_DISCARD_CHOICE:
 		return
 
 	if event is InputEventMouseMotion:
@@ -441,25 +438,7 @@ func _finish_drag() -> void:
 	pending_drag_card = null
 
 	if _is_global_point_in_play_zone(get_global_mouse_position()):
-		if not active_card_data or not cards_match(card, active_card_data):
-			var invalid_message := "Invalid play — match the active card."
-			print("Invalid play")
-			_set_feedback(invalid_message)
-			_set_selected_card(null)
-			if card.has_method("snap_to_hand"):
-				card.snap_to_hand()
-			_set_focused_card(null)
-			_apply_focus_offsets(_get_focus_anchor_card())
-			return
-
-		var zone_center := _get_play_zone_center()
-		consecutive_passes = 0
-		_set_selected_card(null)
-		if card.has_method("snap_to_play_zone"):
-			card.snap_to_play_zone(zone_center)
-		var played_message := "Played %s %s" % [card.get("rank"), card.get("suit")]
-		print("Card played: %s %s" % [card.get("rank"), card.get("suit")])
-		_set_feedback(played_message)
+		_finish_player_card_drop(card)
 	else:
 		_set_selected_card(null)
 		if card.has_method("snap_to_hand"):
@@ -467,6 +446,65 @@ func _finish_drag() -> void:
 
 	_set_focused_card(null)
 	_apply_focus_offsets(_get_focus_anchor_card())
+
+
+func _finish_player_card_drop(card: Node2D) -> void:
+	var hand_index := cards.find(card)
+	if hand_index < 0 or hand_index >= hands[0].size():
+		_set_feedback("Invalid play — card is not in your hand.")
+		if card.has_method("snap_to_hand"):
+			card.snap_to_hand()
+		return
+
+	var played_card = hands[0][hand_index]
+	if game_phase == PHASE_PLAYER_TURN:
+		_play_player_opening_card(card, hand_index, played_card)
+		return
+
+	if game_phase == PHASE_PLAYER_DISCARD_CHOICE:
+		_play_player_discard_card(card, hand_index, played_card)
+		return
+
+	if card.has_method("snap_to_hand"):
+		card.snap_to_hand()
+
+
+func _play_player_opening_card(card: Node2D, hand_index: int, played_card) -> void:
+	if not active_card_data or not cards_match(played_card, active_card_data):
+		var invalid_message := "Invalid play — match the active card."
+		print("Invalid play")
+		_set_feedback(invalid_message)
+		_set_selected_card(null)
+		if card.has_method("snap_to_hand"):
+			card.snap_to_hand()
+		return
+
+	consecutive_passes = 0
+	_remove_card_from_hand(0, hand_index)
+	_set_active_card(played_card)
+	_set_selected_card(null)
+	_set_feedback("Played %s %s." % [played_card.rank, played_card.suit])
+	print("Card played: %s %s" % [played_card.rank, played_card.suit])
+	_render_player_hand()
+
+	if hands[0].is_empty():
+		_set_feedback("Tap to win!")
+	else:
+		_set_phase(PHASE_PLAYER_DISCARD_CHOICE)
+		_set_feedback("Discard any card to set the new active card, or end turn.")
+
+	_update_table_ui()
+
+
+func _play_player_discard_card(card: Node2D, hand_index: int, played_card) -> void:
+	_remove_card_from_hand(0, hand_index)
+	_set_active_card(played_card)
+	_set_selected_card(null)
+	_set_feedback("Discarded %s %s." % [played_card.rank, played_card.suit])
+	print("Card discarded: %s %s" % [played_card.rank, played_card.suit])
+	_render_player_hand()
+	_advance_turn()
+	_update_table_ui()
 
 
 func _get_play_zone() -> CanvasItem:
@@ -517,8 +555,8 @@ func _update_table_ui() -> void:
 	if turn_label:
 		if hand_over:
 			turn_label.text = "HAND OVER"
-		elif game_phase == PHASE_CHOOSE_NEXT_RANK:
-			turn_label.text = "CHOOSE RANK"
+		elif game_phase == PHASE_PLAYER_DISCARD_CHOICE:
+			turn_label.text = "DISCARD"
 		else:
 			turn_label.text = "%s TURN" % PLAYER_NAMES[current_player_index].to_upper()
 
@@ -532,7 +570,7 @@ func _update_table_ui() -> void:
 
 	var play_button := get_node_or_null(play_button_path) as Button
 	if play_button:
-		play_button.disabled = hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0 or hands[0].is_empty() or not _hand_has_match(hands[0], active_card_data)
+		play_button.disabled = true
 
 	var pass_button := get_node_or_null(pass_button_path) as Button
 	if pass_button:
@@ -541,6 +579,10 @@ func _update_table_ui() -> void:
 	var tap_button := get_node_or_null(tap_button_path) as Button
 	if tap_button:
 		tap_button.disabled = hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0 or not hands[0].is_empty()
+
+	var end_turn_button := get_node_or_null(end_turn_button_path) as Button
+	if end_turn_button:
+		end_turn_button.disabled = hand_over or game_phase != PHASE_PLAYER_DISCARD_CHOICE or current_player_index != 0
 
 
 func _set_feedback(message: String) -> void:
@@ -566,6 +608,10 @@ func _connect_action_buttons() -> void:
 	if tap_button:
 		tap_button.pressed.connect(_on_tap_button_pressed)
 
+	var end_turn_button := get_node_or_null(end_turn_button_path) as Button
+	if end_turn_button:
+		end_turn_button.pressed.connect(_on_end_turn_button_pressed)
+
 	var new_hand_button := get_node_or_null(new_hand_button_path) as Button
 	if new_hand_button:
 		new_hand_button.pressed.connect(start_new_hand)
@@ -586,52 +632,8 @@ func _clear_rank_choice_buttons() -> void:
 	container.visible = false
 
 
-func _build_rank_choice_buttons() -> void:
-	var container := get_node_or_null(rank_choice_container_path) as Control
-	if not container:
-		_log_error_and_end_hand("Missing rank choice container at path: %s" % rank_choice_container_path)
-		return
-
-	_clear_rank_choice_buttons()
-	container.visible = true
-
-	var rank_options := _get_unique_ranks_in_hand(hands[0])
-	print("Choose rank options: %s" % [rank_options])
-	if rank_options.is_empty():
-		_log_error_and_end_hand("No rank choices available.")
-		return
-
-	for rank_name in rank_options:
-		var button := Button.new()
-		button.text = rank_name
-		button.disabled = false
-		button.pressed.connect(_on_rank_choice_pressed.bind(rank_name))
-		container.add_child(button)
-
-
 func _on_play_button_pressed() -> void:
-	if hand_over or game_phase != PHASE_PLAYER_TURN or current_player_index != 0:
-		return
-
-	if hands[0].is_empty():
-		_update_table_ui()
-		return
-
-	if not _hand_has_match(hands[0], active_card_data):
-		_set_feedback("You cannot play the active card.")
-		_update_table_ui()
-		return
-
-	var played_cards := _play_matching_cards(0)
-	consecutive_passes = 0
-	_set_feedback("You played %s." % _describe_played_cards(played_cards))
-	_render_player_hand()
-
-	if hands[0].is_empty():
-		_set_feedback("Tap to win!")
-	else:
-		_enter_choose_next_rank_phase()
-
+	_set_feedback("Drag a matching card to play.")
 	_update_table_ui()
 
 
@@ -662,6 +664,15 @@ func _on_tap_button_pressed() -> void:
 	_end_hand(0)
 
 
+func _on_end_turn_button_pressed() -> void:
+	if hand_over or game_phase != PHASE_PLAYER_DISCARD_CHOICE or current_player_index != 0:
+		return
+
+	_set_feedback("Turn ended.")
+	_advance_turn()
+	_update_table_ui()
+
+
 func _run_bot_turns() -> void:
 	if waiting_for_bot or hand_over or game_phase != PHASE_BOT_TURN or current_player_index == 0:
 		return
@@ -683,14 +694,19 @@ func _take_bot_turn(player_index: int) -> void:
 		return
 
 	if _hand_has_match(hands[player_index], active_card_data):
-		var played_cards := _play_matching_cards(player_index)
+		var match_index := _get_first_matching_card_index(hands[player_index], active_card_data)
+		var matched_card = _remove_card_from_hand(player_index, match_index)
 		consecutive_passes = 0
-		_set_feedback("%s played %s." % [PLAYER_NAMES[player_index], _describe_played_cards(played_cards)])
+		_set_active_card(matched_card)
+		_set_feedback("%s played %s %s." % [PLAYER_NAMES[player_index], matched_card.rank, matched_card.suit])
 		if hands[player_index].is_empty():
 			_end_hand(player_index)
 			return
 
-		_choose_new_active_rank_from_hand(player_index)
+		var discard_index: int = randi() % hands[player_index].size()
+		var discard_card = _remove_card_from_hand(player_index, discard_index)
+		_set_active_card(discard_card)
+		_set_feedback("%s discarded %s %s." % [PLAYER_NAMES[player_index], discard_card.rank, discard_card.suit])
 	else:
 		_set_feedback("%s passed." % PLAYER_NAMES[player_index])
 		consecutive_passes += 1
@@ -775,99 +791,25 @@ func _hand_has_match(hand: Array, active_card) -> bool:
 	return false
 
 
-func _play_matching_cards(player_index: int) -> Array:
-	var played_cards: Array = []
-	var kept_cards: Array = []
+func _get_first_matching_card_index(hand: Array, active_card) -> int:
+	if not active_card:
+		return -1
 
-	for card_data in hands[player_index]:
-		if active_card_data and cards_match(card_data, active_card_data):
-			played_cards.append(card_data)
-		else:
-			kept_cards.append(card_data)
+	for index in range(hand.size()):
+		if cards_match(hand[index], active_card):
+			return index
 
-	hands[player_index] = kept_cards
-	return played_cards
+	return -1
 
 
-func _choose_new_active_rank_from_hand(player_index: int) -> void:
-	if hands[player_index].is_empty():
-		return
+func _remove_card_from_hand(player_index: int, card_index: int):
+	if player_index < 0 or player_index >= hands.size():
+		return null
 
-	var next_card = _get_random_card_from_hand(player_index)
-	_set_active_card(next_card)
-	if player_index == 0:
-		_set_feedback("Active rank changed to %s." % next_card.rank)
-	else:
-		_set_feedback("%s changed active rank to %s." % [PLAYER_NAMES[player_index], next_card.rank])
+	if card_index < 0 or card_index >= hands[player_index].size():
+		return null
 
-	_update_table_ui()
-
-
-func _enter_choose_next_rank_phase() -> void:
-	if hands[0].is_empty():
-		_set_feedback("Tap to win!")
-		_update_table_ui()
-		return
-
-	var rank_options := _get_unique_ranks_in_hand(hands[0])
-	if rank_options.is_empty():
-		_log_error_and_end_hand("No rank choices available.")
-		return
-
-	_set_phase(PHASE_CHOOSE_NEXT_RANK)
-	rank_choice_locked = false
-	pending_drag_card = null
-	if is_instance_valid(dragged_card):
-		if dragged_card.has_method("snap_to_hand"):
-			dragged_card.snap_to_hand()
-		dragged_card = null
-
-	_set_selected_card(null)
-	_set_feedback("Choose the next rank.")
-	_build_rank_choice_buttons()
-	_update_table_ui()
-
-
-func _on_rank_choice_pressed(rank_name: String) -> void:
-	if hand_over or game_phase != PHASE_CHOOSE_NEXT_RANK or current_player_index != 0 or rank_choice_locked:
-		return
-
-	var chosen_card = _get_first_card_with_rank(hands[0], rank_name)
-	if not chosen_card:
-		_set_feedback("Choose a rank from your hand.")
-		_update_table_ui()
-		return
-
-	rank_choice_locked = true
-	_set_active_card(chosen_card)
-	_set_feedback("Active rank changed to %s." % rank_name)
-	_set_phase(PHASE_PLAYER_TURN)
-	_advance_turn()
-	_update_table_ui()
-
-
-func _get_unique_ranks_in_hand(hand: Array) -> Array[String]:
-	var ranks: Array[String] = []
-	for card_data in hand:
-		if not ranks.has(card_data.rank):
-			ranks.append(card_data.rank)
-
-	return ranks
-
-
-func _get_first_card_with_rank(hand: Array, rank_name: String):
-	for card_data in hand:
-		if card_data.rank == rank_name:
-			return card_data
-
-	return null
-
-
-func _get_random_card_from_hand(player_index: int):
-	if hands[player_index].is_empty():
-		return active_card_data
-
-	return hands[player_index][randi() % hands[player_index].size()]
+	return hands[player_index].pop_at(card_index)
 
 
 func _end_hand(winner_index: int) -> void:
