@@ -38,6 +38,9 @@ signal selected_ended(card: Node2D)
 @export var hover_duration: float = 0.08
 @export var hover_z_index_boost: int = 100
 @export var selected_z_index_boost: int = 120
+@export var drag_scale_multiplier: float = 1.12
+@export var drag_z_index_boost: int = 200
+@export var snap_duration: float = 0.12
 @export var shadow_idle_position := Vector2(4, 4)
 @export var shadow_hover_position := Vector2(6, 6)
 @export var shadow_idle_scale := Vector2.ONE
@@ -63,7 +66,10 @@ var hand_focus_offset := Vector2.ZERO
 var tween: Tween
 var is_hovering := false
 var is_selected := false
+var is_dragging := false
+var is_played := false
 var is_hand_controlled := false
+var played_position := Vector2.ZERO
 
 @onready var shadow: Sprite2D = $Shadow
 @onready var rank_top: Sprite2D = $RankTop
@@ -181,6 +187,37 @@ func set_selected_active(selected: bool) -> void:
 	_tween_to_current_state()
 
 
+func set_drag_active(dragging: bool) -> void:
+	if dragging == is_dragging:
+		return
+
+	is_dragging = dragging
+	_tween_to_current_state()
+
+
+func set_drag_global_position(target_global_position: Vector2) -> void:
+	global_position = target_global_position
+
+
+func snap_to_hand() -> void:
+	is_played = false
+	is_dragging = false
+	is_selected = false
+	is_hovering = false
+	hand_focus_offset = Vector2.ZERO
+	_tween_to_current_state(snap_duration)
+
+
+func snap_to_play_zone(target_global_position: Vector2) -> void:
+	is_played = true
+	is_dragging = false
+	is_selected = false
+	is_hovering = false
+	hand_focus_offset = Vector2.ZERO
+	played_position = get_parent().to_local(target_global_position)
+	_tween_to_current_state(snap_duration)
+
+
 func set_hand_focus_offset(offset: Vector2, duration: float = -1.0) -> void:
 	hand_focus_offset = offset
 	_tween_to_current_state(duration if duration >= 0.0 else hover_duration)
@@ -190,20 +227,29 @@ func _tween_to_current_state(duration: float = -1.0) -> void:
 	if tween:
 		tween.kill()
 
-	if is_selected:
+	if is_dragging:
+		z_index = original_z_index + drag_z_index_boost
+	elif is_selected:
 		z_index = original_z_index + selected_z_index_boost
 	elif is_hovering:
 		z_index = original_z_index + hover_z_index_boost
 	else:
 		z_index = original_z_index
 
-	var target_position := original_position + hand_focus_offset
+	var target_position := played_position if is_played else original_position + hand_focus_offset
+	var target_rotation := 0.0 if is_played else original_rotation
 	var target_scale := original_scale
 	var target_shadow_position := shadow_idle_position
 	var target_shadow_scale := shadow_idle_scale
 	var target_shadow_alpha := shadow_idle_alpha
 
-	if is_selected:
+	if is_dragging:
+		target_rotation = 0.0
+		target_scale = original_scale * drag_scale_multiplier
+		target_shadow_position = shadow_hover_position
+		target_shadow_scale = shadow_hover_scale
+		target_shadow_alpha = shadow_hover_alpha
+	elif is_selected:
 		target_position += Vector2(0, -selected_lift_pixels)
 		target_scale = original_scale * selected_scale_multiplier
 		target_shadow_position = shadow_hover_position
@@ -218,7 +264,9 @@ func _tween_to_current_state(duration: float = -1.0) -> void:
 
 	tween = create_tween()
 	tween.set_parallel(true)
-	tween.tween_property(self, "position", target_position, duration if duration >= 0.0 else hover_duration)
+	if not is_dragging:
+		tween.tween_property(self, "position", target_position, duration if duration >= 0.0 else hover_duration)
+	tween.tween_property(self, "rotation", target_rotation, duration if duration >= 0.0 else hover_duration)
 	tween.tween_property(self, "scale", target_scale, duration if duration >= 0.0 else hover_duration)
 	tween.tween_property(shadow, "position", target_shadow_position, duration if duration >= 0.0 else hover_duration)
 	tween.tween_property(shadow, "scale", target_shadow_scale, duration if duration >= 0.0 else hover_duration)

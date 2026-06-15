@@ -3,57 +3,177 @@
 [ext_resource type="PackedScene" uid="uid://bxru1ktk0nqwm" path="res://scenes/table/Table.tscn" id="1_nha0i"]
 [ext_resource type="PackedScene" uid="uid://5jh8p2v8an4e" path="res://scenes/cards/Card.tscn" id="2_q24mn"]
 [ext_resource type="Script" uid="uid://d2f04w0ro8oct" path="res://scripts/effects/HandFocus.gd" id="3_5xcut"]
+[ext_resource type="Texture2D" uid="uid://bi8wfjoto3cjc" path="res://assets/cards/backs/card_back_v01.png" id="4_xhdlp"]
 
 [node name="Main" type="Node2D" unique_id=1534491376]
 
 [node name="Table" parent="." unique_id=1642455344 instance=ExtResource("1_nha0i")]
 position = Vector2(640, 360)
 
+[node name="DeckArea" type="Node2D" parent="." unique_id=1287706963]
+position = Vector2(1070, 175)
+
+[node name="DeckPile" type="Sprite2D" parent="DeckArea" unique_id=1916835199]
+texture_filter = 1
+scale = Vector2(1.5, 1.5)
+texture = ExtResource("4_xhdlp")
+
+[node name="DeckLabel" type="Label" parent="DeckArea" unique_id=18573451]
+offset_left = -32.0
+offset_top = -96.0
+offset_right = 32.0
+offset_bottom = -73.0
+theme_override_font_sizes/font_size = 18
+text = "DECK"
+horizontal_alignment = 1
+
+[node name="DeckCountLabel" type="Label" parent="DeckArea" unique_id=329403914]
+offset_left = -44.0
+offset_top = 78.0
+offset_right = 44.0
+offset_bottom = 101.0
+theme_override_font_sizes/font_size = 16
+text = "COUNT: 52"
+horizontal_alignment = 1
+
+[node name="OpponentInfo" type="Label" parent="." unique_id=486738053]
+offset_left = 470.0
+offset_top = 46.0
+offset_right = 810.0
+offset_bottom = 76.0
+theme_override_font_sizes/font_size = 18
+text = "BOTS: 5 cards each"
+horizontal_alignment = 1
+
+[node name="PlayZone" type="ColorRect" parent="." unique_id=602692356]
+offset_left = 530.0
+offset_top = 270.0
+offset_right = 750.0
+offset_bottom = 450.0
+mouse_filter = 2
+color = Color(0.2, 0.65, 1, 0.22)
+
+[node name="PlayHereLabel" type="Label" parent="PlayZone" unique_id=275268476]
+layout_mode = 1
+offset_left = 52.0
+offset_top = 8.0
+offset_right = 168.0
+offset_bottom = 36.0
+theme_override_font_sizes/font_size = 18
+text = "PLAY HERE"
+horizontal_alignment = 1
+
+[node name="ActiveCard" parent="." unique_id=1090515192 instance=ExtResource("2_q24mn")]
+z_index = 5
+position = Vector2(640, 360)
+scale = Vector2(1.5, 1.5)
+
+[node name="ActiveCardLabel" type="Label" parent="." unique_id=840599740]
+offset_left = 570.0
+offset_top = 438.0
+offset_right = 710.0
+offset_bottom = 462.0
+theme_override_font_sizes/font_size = 16
+text = "ACTIVE CARD"
+horizontal_alignment = 1
+
+[node name="TurnBanner" type="Label" parent="." unique_id=652159347]
+offset_left = 560.0
+offset_top = 486.0
+offset_right = 720.0
+offset_bottom = 519.0
+theme_override_font_sizes/font_size = 28
+text = "YOUR TURN"
+horizontal_alignment = 1
+
+[node name="ActionButtons" type="HBoxContainer" parent="." unique_id=737362497]
+offset_left = 95.0
+offset_top = 600.0
+offset_right = 499.0
+offset_bottom = 638.0
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="PlayButton" type="Button" parent="ActionButtons" unique_id=433871425]
+layout_mode = 2
+text = "PLAY"
+
+[node name="PassButton" type="Button" parent="ActionButtons" unique_id=480883019]
+layout_mode = 2
+text = "PASS"
+
+[node name="TapButton" type="Button" parent="ActionButtons" unique_id=289326295]
+layout_mode = 2
+text = "TAP"
+
+[node name="NewHandButton" type="Button" parent="ActionButtons" unique_id=1143905656]
+layout_mode = 2
+text = "NEW HAND"
+
+[node name="RankChoiceButtons" type="HBoxContainer" parent="." unique_id=1094287847]
+visible = false
+offset_left = 438.0
+offset_top = 558.0
+offset_right = 842.0
+offset_bottom = 596.0
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="CommentaryPanel" type="ColorRect" parent="." unique_id=2013435499]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -100.0
+mouse_filter = 2
+color = Color(0.04, 0.06, 0.07, 0.72)
+
+[node name="CommentaryTitle" type="Label" parent="CommentaryPanel" unique_id=1372821125]
+layout_mode = 1
+offset_left = 24.0
+offset_top = 10.0
+offset_right = 180.0
+offset_bottom = 32.0
+theme_override_font_sizes/font_size = 16
+text = "COMMENTARY"
+
+[node name="MessagesLabel" type="Label" parent="CommentaryPanel" unique_id=1592431202]
+layout_mode = 1
+offset_left = 24.0
+offset_top = 34.0
+offset_right = 1256.0
+offset_bottom = 96.0
+theme_override_font_sizes/font_size = 18
+text = "Cards dealt. Active card drawn."
+
 [node name="PlayerHand" type="Node2D" parent="." unique_id=294880449]
+position = Vector2(0, 75)
 script = ExtResource("3_5xcut")
 
 [node name="HandCard1" parent="PlayerHand" unique_id=1800681127 instance=ExtResource("2_q24mn")]
 position = Vector2(480, 559.99994)
 rotation = -0.10471976
 scale = Vector2(1.5, 1.5)
-pip_scale = null
-pip_offset_adjustment = null
 
 [node name="HandCard2" parent="PlayerHand" unique_id=1466429600 instance=ExtResource("2_q24mn")]
 z_index = 10
 position = Vector2(560, 555)
 rotation = -0.05235988
 scale = Vector2(1.5, 1.5)
-rank = "7"
-suit = "CLUB"
-pip_scale = null
-pip_offset_adjustment = null
 
 [node name="HandCard3" parent="PlayerHand" unique_id=1912964070 instance=ExtResource("2_q24mn")]
 z_index = 20
 position = Vector2(640, 550)
 scale = Vector2(1.5, 1.5)
-rank = "10"
-suit = "SPADE"
-pip_scale = null
-pip_offset_adjustment = null
 
 [node name="HandCard4" parent="PlayerHand" unique_id=118289768 instance=ExtResource("2_q24mn")]
 z_index = 30
 position = Vector2(720, 555)
 rotation = 0.05235988
 scale = Vector2(1.5, 1.5)
-rank = "K"
-suit = "DIAMOND"
-pip_scale = null
-pip_offset_adjustment = null
 
 [node name="HandCard5" parent="PlayerHand" unique_id=2137614381 instance=ExtResource("2_q24mn")]
 z_index = 40
 position = Vector2(800, 560)
 rotation = 0.10471976
 scale = Vector2(1.5, 1.5)
-rank = "8"
-suit = "SPADE"
-pip_scale = null
-pip_offset_adjustment = null
