@@ -10,6 +10,9 @@
 [node name="Table" parent="." unique_id=1642455344 instance=ExtResource("1_nha0i")]
 position = Vector2(640, 360)
 
+[node name="HUDLayer" type="CanvasLayer" parent="."]
+layer = 20
+
 [node name="DeckArea" type="Node2D" parent="." unique_id=1287706963]
 position = Vector2(1070, 175)
 
@@ -45,7 +48,7 @@ theme_override_font_sizes/font_size = 18
 text = "BOTS: 5 cards each"
 horizontal_alignment = 1
 
-[node name="HandCounterLabel" type="Label" parent="."]
+[node name="HandCounterLabel" type="Label" parent="." unique_id=548736503]
 offset_left = 540.0
 offset_top = 82.0
 offset_right = 740.0
@@ -54,44 +57,35 @@ theme_override_font_sizes/font_size = 22
 text = "HAND 1 / 5"
 horizontal_alignment = 1
 
-[node name="ScoreboardPanel" type="ColorRect" parent="." unique_id=1279461353]
+[node name="ScoreboardPanel" type="ColorRect" parent="HUDLayer" unique_id=1279461353]
 offset_left = 24.0
 offset_top = 100.0
-offset_right = 224.0
-offset_bottom = 392.0
+offset_right = 244.0
+offset_bottom = 400.0
 mouse_filter = 2
-color = Color(0.04, 0.06, 0.07, 0.55)
+color = Color(0.025, 0.09, 0.07, 0.92)
 
-[node name="ScoreboardLabel" type="Label" parent="ScoreboardPanel" unique_id=98684819]
+[node name="ScoreboardLabel" type="Label" parent="HUDLayer/ScoreboardPanel" unique_id=98684819]
 layout_mode = 1
 offset_left = 12.0
 offset_top = 10.0
 offset_right = 188.0
 offset_bottom = 282.0
 theme_override_font_sizes/font_size = 16
-text = "CHAMPIONSHIP STANDINGS
+text = "QUICK PLAY
+HAND 1 / 1
 
-You:
-Points: 0
-Chips: £0
-
-Bot 1:
-Points: 0
-Chips: £0
-
-Bot 2:
-Points: 0
-Chips: £0
-
-Bot 3:
-Points: 0
-Chips: £0"
+CARDS
+You: 5
+Bot 1: 5
+Bot 2: 5
+Bot 3: 5"
 
 [node name="RulesButton" type="Button" parent="." unique_id=1537448321]
 offset_left = 24.0
-offset_top = 408.0
+offset_top = 670.0
 offset_right = 177.0
-offset_bottom = 442.0
+offset_bottom = 704.0
 text = "RULES"
 
 [node name="PlayZone" type="ColorRect" parent="." unique_id=602692356]
@@ -154,7 +148,7 @@ offset_top = 80.0
 offset_right = 890.0
 offset_bottom = 610.0
 mouse_filter = 2
-color = Color(0.04, 0.06, 0.07, 0.82)
+color = Color(0.025, 0.09, 0.07, 0.92)
 
 [node name="HandSummaryLabel" type="Label" parent="HandSummaryPanel" unique_id=46432290]
 layout_mode = 1
@@ -175,7 +169,7 @@ offset_bottom = 486.0
 disabled = true
 text = "NEXT HAND"
 
-[node name="NewChampionshipButton" type="Button" parent="HandSummaryPanel"]
+[node name="NewChampionshipButton" type="Button" parent="HandSummaryPanel" unique_id=190545855]
 visible = false
 layout_mode = 1
 offset_left = 160.0
@@ -188,9 +182,9 @@ text = "NEW CHAMPIONSHIP"
 [node name="LeftActionStack" type="Control" parent="." unique_id=737362497]
 layout_mode = 3
 anchors_preset = 0
-offset_left = 170.0
+offset_left = 230.0
 offset_top = 450.0
-offset_right = 290.0
+offset_right = 350.0
 offset_bottom = 532.0
 
 [node name="PlayButton" type="Button" parent="LeftActionStack" unique_id=433871425]
@@ -246,7 +240,7 @@ offset_bottom = 596.0
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="RulesModal" type="Control" parent="." unique_id=83624252]
+[node name="RulesModal" type="Control" parent="HUDLayer" unique_id=83624252]
 visible = false
 top_level = true
 z_index = 80
@@ -255,21 +249,21 @@ anchors_preset = 0
 offset_right = 1280.0
 offset_bottom = 720.0
 
-[node name="DimOverlay" type="ColorRect" parent="RulesModal" unique_id=2129167155]
+[node name="DimOverlay" type="ColorRect" parent="HUDLayer/RulesModal" unique_id=2129167155]
 layout_mode = 1
 offset_right = 1280.0
 offset_bottom = 720.0
 color = Color(0, 0, 0, 0.48)
 
-[node name="Panel" type="ColorRect" parent="RulesModal" unique_id=1970165767]
+[node name="Panel" type="ColorRect" parent="HUDLayer/RulesModal" unique_id=1970165767]
 layout_mode = 1
 offset_left = 192.0
 offset_top = 108.0
 offset_right = 1088.0
 offset_bottom = 612.0
-color = Color(0.04, 0.06, 0.07, 0.96)
+color = Color(0.025, 0.09, 0.07, 0.92)
 
-[node name="TitleLabel" type="Label" parent="RulesModal/Panel" unique_id=700318096]
+[node name="TitleLabel" type="Label" parent="HUDLayer/RulesModal/Panel" unique_id=700318096]
 layout_mode = 1
 offset_left = 32.0
 offset_top = 24.0
@@ -279,7 +273,7 @@ theme_override_font_sizes/font_size = 28
 text = "HOW TO PLAY"
 horizontal_alignment = 1
 
-[node name="ScrollContainer" type="ScrollContainer" parent="RulesModal/Panel" unique_id=1943836791]
+[node name="ScrollContainer" type="ScrollContainer" parent="HUDLayer/RulesModal/Panel" unique_id=1943836791]
 layout_mode = 1
 offset_left = 40.0
 offset_top = 78.0
@@ -287,7 +281,7 @@ offset_right = 856.0
 offset_bottom = 420.0
 horizontal_scroll_mode = 0
 
-[node name="RulesTextLabel" type="Label" parent="RulesModal/Panel/ScrollContainer" unique_id=1500724357]
+[node name="RulesTextLabel" type="Label" parent="HUDLayer/RulesModal/Panel/ScrollContainer" unique_id=1500724357]
 custom_minimum_size = Vector2(792, 0)
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
@@ -313,7 +307,7 @@ Passing / Draw
 If you cannot match the Active Card, pass. If everyone passes, each player draws one card."
 autowrap_mode = 2
 
-[node name="CloseButton" type="Button" parent="RulesModal/Panel" unique_id=1024788236]
+[node name="CloseButton" type="Button" parent="HUDLayer/RulesModal/Panel" unique_id=1024788236]
 layout_mode = 1
 offset_left = 388.0
 offset_top = 442.0
@@ -321,16 +315,15 @@ offset_right = 508.0
 offset_bottom = 476.0
 text = "CLOSE"
 
-[node name="CommentaryPanel" type="ColorRect" parent="." unique_id=2013435499]
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = -100.0
+[node name="CommentaryPanel" type="ColorRect" parent="HUDLayer" unique_id=2013435499]
+offset_left = 260.0
+offset_top = 620.0
+offset_right = 1040.0
+offset_bottom = 710.0
 mouse_filter = 2
-color = Color(0.039215688, 0.05882353, 0.07058824, 0.72156864)
+color = Color(0.025, 0.09, 0.07, 0.92)
 
-[node name="CommentaryTitle" type="Label" parent="CommentaryPanel" unique_id=1372821125]
+[node name="CommentaryTitle" type="Label" parent="HUDLayer/CommentaryPanel" unique_id=1372821125]
 layout_mode = 1
 offset_left = 24.0
 offset_top = 10.0
@@ -339,14 +332,21 @@ offset_bottom = 32.0
 theme_override_font_sizes/font_size = 16
 text = "COMMENTARY"
 
-[node name="MessagesLabel" type="Label" parent="CommentaryPanel" unique_id=1592431202]
+[node name="MessagesLabel" type="Label" parent="HUDLayer/CommentaryPanel" unique_id=1592431202]
 layout_mode = 1
-offset_left = 24.0
-offset_top = 34.0
-offset_right = 1256.0
-offset_bottom = 96.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 2
 theme_override_font_sizes/font_size = 18
 text = "Cards dealt. Active card drawn."
+vertical_alignment = 1
+autowrap_mode = 2
 
 [node name="PlayerHand" type="Node2D" parent="." unique_id=294880449]
 position = Vector2(0, 75)
@@ -356,7 +356,6 @@ pass_button_path = NodePath("../LeftActionStack/PassButton")
 tap_button_path = NodePath("../RightActionStack/TapButton")
 end_turn_button_path = NodePath("../RightActionStack/EndTurnButton")
 new_hand_button_path = NodePath("../HandSummaryPanel/NewHandButton")
-new_championship_button_path = NodePath("../HandSummaryPanel/NewChampionshipButton")
 
 [node name="HandCard1" parent="PlayerHand" unique_id=1800681127 instance=ExtResource("2_q24mn")]
 position = Vector2(480, 559.99994)

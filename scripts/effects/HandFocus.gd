@@ -4,6 +4,7 @@ signal hand_finished(result: Dictionary)
 
 const DeckScript := preload("res://scripts/cards/Deck.gd")
 const CardScene := preload("res://scenes/cards/Card.tscn")
+const UISkins := preload("res://scripts/ui/UISkins.gd")
 const PLAYER_NAMES := ["You", "Bot 1", "Bot 2", "Bot 3"]
 const MODE_QUICK_PLAY := "quick_play"
 const MODE_GRAND_PRIX := "grand_prix"
@@ -12,6 +13,13 @@ const PHASE_PLAYER_TURN := "PLAYER_TURN"
 const PHASE_PLAYER_DISCARD_CHOICE := "PLAYER_DISCARD_CHOICE"
 const PHASE_BOT_TURN := "BOT_TURN"
 const PHASE_HAND_OVER := "HAND_OVER"
+
+enum GameSpeed {
+	INSTANT,
+	FAST,
+	NORMAL,
+	SLOW,
+}
 
 @export var separation_pixels: float = 16.0
 @export var separation_duration: float = 0.1
@@ -43,6 +51,7 @@ const PHASE_HAND_OVER := "HAND_OVER"
 @export var max_feedback_messages: int = 4
 @export var ante_amount: int = 1
 @export var max_auto_actions_per_hand: int = 100
+@export var game_speed: GameSpeed = GameSpeed.NORMAL
 @export var total_hands: int = 5
 @export var starting_chips: int = 0
 @export var championship_win_points: int = 25
@@ -135,6 +144,8 @@ func _ready() -> void:
 		if active_card.has_method("set_hand_controlled"):
 			active_card.set_hand_controlled(true)
 
+	_ensure_hud_layer()
+	_apply_ui_skins()
 	_connect_action_buttons()
 	if auto_start:
 		start_session({
@@ -143,13 +154,158 @@ func _ready() -> void:
 			"starting_chips": starting_chips,
 			"external_results": use_external_results_screen,
 		})
+	_debug_hud_visibility()
 	print("DEBUG: _ready end")
+
+
+func _ensure_hud_layer() -> void:
+	var root := get_parent()
+	if not root:
+		return
+
+	var hud_layer := root.get_node_or_null("HUDLayer") as CanvasLayer
+	if not hud_layer:
+		return
+
+	hud_layer.layer = 20
+
+	_move_hud_control(root, hud_layer, "ScoreboardPanel")
+	_move_hud_control(root, hud_layer, "CommentaryPanel")
+	scoreboard_label_path = ^"../HUDLayer/ScoreboardPanel/ScoreboardLabel"
+	feedback_label_path = ^"../HUDLayer/CommentaryPanel/MessagesLabel"
+	rules_modal_path = ^"../HUDLayer/RulesModal"
+	rules_close_button_path = ^"../HUDLayer/RulesModal/Panel/CloseButton"
+
+
+func _move_hud_control(root: Node, hud_layer: CanvasLayer, node_name: String) -> void:
+	var control := root.get_node_or_null(node_name) as Control
+	if not control:
+		control = hud_layer.get_node_or_null(node_name) as Control
+	if not control or control.get_parent() == hud_layer:
+		return
+
+	control.reparent(hud_layer, true)
+	control.visible = true
+
+
+func _get_hud_control(node_name: String) -> Control:
+	var root := get_parent()
+	if not root:
+		return null
+
+	var hud_layer := root.get_node_or_null("HUDLayer") as CanvasLayer
+	if hud_layer:
+		var hud_control := hud_layer.get_node_or_null(node_name) as Control
+		if hud_control:
+			return hud_control
+
+	return root.get_node_or_null(node_name) as Control
+
+
+func _debug_hud_visibility() -> void:
+	var scoreboard := _get_hud_control("ScoreboardPanel")
+	if scoreboard:
+		print("Scoreboard visible: %s global_position: %s" % [scoreboard.visible, scoreboard.global_position])
+
+	var commentary := _get_hud_control("CommentaryPanel")
+	if commentary:
+		print("Commentary visible: %s global_position: %s" % [commentary.visible, commentary.global_position])
+
+
+func _apply_ui_skins() -> void:
+	UISkins.apply_ui_font_tree(get_parent())
+
+	UISkins.apply_info_panel(_get_hud_control("ScoreboardPanel"))
+	UISkins.apply_info_panel(get_node_or_null(^"../HandSummaryPanel") as Control)
+	UISkins.apply_info_panel(_get_hud_control("CommentaryPanel"))
+	UISkins.apply_info_panel(get_node_or_null(^"../HUDLayer/RulesModal/Panel") as Control)
+	_apply_score_panel_layout()
+	_apply_feed_panel_text_layout()
+
+	UISkins.apply_play_button(get_node_or_null(play_button_path) as Button)
+	UISkins.apply_pass_button(get_node_or_null(pass_button_path) as Button)
+	UISkins.apply_tap_button(get_node_or_null(tap_button_path) as Button)
+	UISkins.apply_utility_button(get_node_or_null(rules_button_path) as Button)
+	UISkins.apply_utility_button(get_node_or_null(end_turn_button_path) as Button)
+	UISkins.apply_utility_button(get_node_or_null(new_hand_button_path) as Button)
+	UISkins.apply_utility_button(get_node_or_null(new_championship_button_path) as Button)
+	UISkins.apply_utility_button(get_node_or_null(rules_close_button_path) as Button)
+
+
+func _apply_score_panel_layout() -> void:
+	var scoreboard_panel := _get_hud_control("ScoreboardPanel")
+	if scoreboard_panel:
+		scoreboard_panel.visible = true
+		scoreboard_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		scoreboard_panel.offset_left = 24.0
+		scoreboard_panel.offset_top = 100.0
+		scoreboard_panel.offset_right = 244.0
+		scoreboard_panel.offset_bottom = 400.0
+		scoreboard_panel.custom_minimum_size = Vector2(220.0, 300.0)
+		scoreboard_panel.z_index = 20
+
+		var skin := scoreboard_panel.get_node_or_null("AtlasSkin") as CanvasItem
+		if skin:
+			skin.visible = true
+			skin.z_index = 0
+
+	var scoreboard_label := get_node_or_null(scoreboard_label_path) as Label
+	if not scoreboard_label:
+		return
+
+	scoreboard_label.visible = true
+	scoreboard_label.z_index = 1
+	scoreboard_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	scoreboard_label.offset_left = 8.0
+	scoreboard_label.offset_top = 8.0
+	scoreboard_label.offset_right = -8.0
+	scoreboard_label.offset_bottom = -8.0
+	scoreboard_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	scoreboard_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+
+func _apply_feed_panel_text_layout() -> void:
+	var commentary_panel := _get_hud_control("CommentaryPanel")
+	if commentary_panel:
+		commentary_panel.visible = true
+		commentary_panel.z_index = 20
+		commentary_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		commentary_panel.offset_left = 260.0
+		commentary_panel.offset_top = 620.0
+		commentary_panel.offset_right = 1040.0
+		commentary_panel.offset_bottom = 710.0
+		commentary_panel.custom_minimum_size = Vector2(780.0, 90.0)
+
+		var skin := commentary_panel.get_node_or_null("AtlasSkin") as CanvasItem
+		if skin:
+			skin.visible = true
+			skin.z_index = 0
+
+	var commentary_title := commentary_panel.get_node_or_null("CommentaryTitle") as Label if commentary_panel else null
+	if commentary_title:
+		commentary_title.visible = false
+
+	var feedback_label := get_node_or_null(feedback_label_path) as Label
+	if not feedback_label:
+		return
+
+	feedback_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	feedback_label.offset_left = 8.0
+	feedback_label.offset_top = 8.0
+	feedback_label.offset_right = -8.0
+	feedback_label.offset_bottom = -8.0
+	feedback_label.visible = true
+	feedback_label.z_index = 1
+	feedback_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	feedback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	feedback_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
 func start_session(config: Dictionary = {}) -> void:
 	game_mode = str(config.get("mode", game_mode))
 	total_hands = max(1, int(config.get("total_hands", total_hands)))
 	starting_chips = max(0, int(config.get("starting_chips", starting_chips)))
+	game_speed = _parse_game_speed(config.get("game_speed", game_speed))
 	use_external_results_screen = bool(config.get("external_results", use_external_results_screen))
 	_reset_championship()
 	start_new_hand()
@@ -585,7 +741,7 @@ func _finish_drag() -> void:
 		stack = [card]
 
 	if _is_global_point_in_play_zone(get_global_mouse_position()):
-		if selected_cards.has(card):
+		if selected_cards.has(card) and selected_cards.size() > 1:
 			_finish_player_chain_drop(stack)
 		else:
 			_finish_player_card_drop(card)
@@ -644,15 +800,16 @@ func _play_player_opening_card(card: Node2D, hand_index: int, played_card) -> vo
 		var invalid_message := "Invalid play — match the active card."
 		print("Invalid play")
 		_set_feedback(invalid_message)
-		_set_selected_card(null)
+		_clear_selected_cards()
 		if card.has_method("snap_to_hand"):
 			card.snap_to_hand()
 		return
 
+	print("PLAYER OPENER PLAYED")
 	consecutive_passes = 0
 	_remove_card_from_hand(0, hand_index)
 	_play_cards_to_pile([played_card])
-	_set_selected_card(null)
+	_clear_selected_cards()
 	_set_feedback("Played %s %s." % [played_card.rank, played_card.suit])
 	print("Card played: %s %s" % [played_card.rank, played_card.suit])
 	_render_player_hand()
@@ -660,6 +817,7 @@ func _play_player_opening_card(card: Node2D, hand_index: int, played_card) -> vo
 	if _check_empty_hand_after_play(0):
 		_update_table_ui()
 	else:
+		print("ENTER DISCARD CHOICE")
 		_set_phase(PHASE_PLAYER_DISCARD_CHOICE)
 		_set_feedback("Discard any card to set the new active card, or end turn.")
 
@@ -669,7 +827,7 @@ func _play_player_opening_card(card: Node2D, hand_index: int, played_card) -> vo
 func _play_player_discard_card(card: Node2D, hand_index: int, played_card) -> void:
 	_remove_card_from_hand(0, hand_index)
 	_play_cards_to_pile([played_card])
-	_set_selected_card(null)
+	_clear_selected_cards()
 	_set_feedback("Discarded %s %s." % [played_card.rank, played_card.suit])
 	print("Card discarded: %s %s" % [played_card.rank, played_card.suit])
 	_render_player_hand()
@@ -792,6 +950,8 @@ func _update_table_ui() -> void:
 		turn_label.visible = not hand_over
 		if game_phase == PHASE_PLAYER_DISCARD_CHOICE:
 			turn_label.text = "DISCARD"
+		elif game_phase == PHASE_BOT_TURN:
+			turn_label.text = "%s's Turn" % PLAYER_NAMES[current_player_index]
 		else:
 			turn_label.text = "%s TURN" % PLAYER_NAMES[current_player_index].to_upper()
 
@@ -1052,6 +1212,10 @@ func _cancel_pointer_interaction_for_modal() -> void:
 
 func _run_bot_turns() -> void:
 	print("DEBUG: bot turn loop requested phase=%s player=%d waiting=%s" % [game_phase, current_player_index, waiting_for_bot])
+	if game_phase == PHASE_PLAYER_DISCARD_CHOICE:
+		print("BLOCK BOT LOOP: discard choice active")
+		return
+
 	if waiting_for_bot or hand_over or game_phase != PHASE_BOT_TURN or current_player_index == 0:
 		return
 
@@ -1061,7 +1225,13 @@ func _run_bot_turns() -> void:
 		if not _record_auto_turn_action():
 			break
 
-		await get_tree().create_timer(0.25).timeout
+		var bot_name: String = PLAYER_NAMES[current_player_index]
+		_set_feedback("%s is thinking..." % bot_name)
+		_update_table_ui()
+
+		var thinking_delay := _get_bot_thinking_delay()
+		if thinking_delay > 0.0:
+			await get_tree().create_timer(thinking_delay).timeout
 		if hand_over or game_phase == PHASE_HAND_OVER:
 			break
 
@@ -1069,9 +1239,52 @@ func _run_bot_turns() -> void:
 		if hand_over or game_phase == PHASE_HAND_OVER:
 			break
 
+		var post_action_delay := _get_bot_post_action_delay()
+		if post_action_delay > 0.0:
+			await get_tree().create_timer(post_action_delay).timeout
+		if hand_over or game_phase == PHASE_HAND_OVER:
+			break
+
+		_advance_turn()
+
 	waiting_for_bot = false
 	print("DEBUG: bot turn loop end phase=%s player=%d actions=%d" % [game_phase, current_player_index, auto_turn_action_count])
 	_update_table_ui()
+
+
+func _parse_game_speed(value) -> GameSpeed:
+	if value is String:
+		match value.to_upper():
+			"INSTANT":
+				return GameSpeed.INSTANT
+			"FAST":
+				return GameSpeed.FAST
+			"SLOW":
+				return GameSpeed.SLOW
+			_:
+				return GameSpeed.NORMAL
+
+	var speed_index := int(value)
+	if speed_index < GameSpeed.INSTANT or speed_index > GameSpeed.SLOW:
+		return GameSpeed.NORMAL
+
+	return speed_index as GameSpeed
+
+
+func _get_bot_thinking_delay() -> float:
+	match game_speed:
+		GameSpeed.INSTANT:
+			return 0.0
+		GameSpeed.FAST:
+			return 1.0
+		GameSpeed.SLOW:
+			return randf_range(5.0, 7.0)
+		_:
+			return randf_range(3.0, 5.0)
+
+
+func _get_bot_post_action_delay() -> float:
+	return 0.0 if game_speed == GameSpeed.INSTANT else 0.5
 
 
 func _take_bot_turn(player_index: int) -> void:
@@ -1084,14 +1297,22 @@ func _take_bot_turn(player_index: int) -> void:
 		var matched_card = _remove_card_from_hand(player_index, match_index)
 		consecutive_passes = 0
 		_play_cards_to_pile([matched_card])
-		_set_feedback("%s played %s %s." % [PLAYER_NAMES[player_index], matched_card.rank, matched_card.suit])
+		var action_message: String = "%s played %s %s." % [PLAYER_NAMES[player_index], matched_card.rank, matched_card.suit]
+		_set_feedback(action_message)
 		if _check_empty_hand_after_play(player_index):
 			return
 
 		var discard_index: int = randi() % hands[player_index].size()
 		var discard_card = _remove_card_from_hand(player_index, discard_index)
 		_play_cards_to_pile([discard_card])
-		_set_feedback("%s discarded %s %s." % [PLAYER_NAMES[player_index], discard_card.rank, discard_card.suit])
+		action_message = "%s played %s %s then discarded %s %s." % [
+			PLAYER_NAMES[player_index],
+			matched_card.rank,
+			matched_card.suit,
+			discard_card.rank,
+			discard_card.suit,
+		]
+		_set_feedback(action_message)
 		if _check_empty_hand_after_play(player_index):
 			return
 	else:
@@ -1099,7 +1320,6 @@ func _take_bot_turn(player_index: int) -> void:
 		consecutive_passes += 1
 
 	print("DEBUG: bot turn end player=%d consecutive_passes=%d" % [player_index, consecutive_passes])
-	_advance_turn()
 	_update_table_ui()
 
 
@@ -1469,18 +1689,34 @@ func _update_scoreboard() -> void:
 
 	var scoreboard_panel := scoreboard_label.get_parent() as CanvasItem
 	if scoreboard_panel:
-		scoreboard_panel.visible = not use_external_results_screen and game_mode == MODE_GRAND_PRIX
+		scoreboard_panel.visible = true
+		scoreboard_panel.z_index = 20
 
-	if use_external_results_screen or game_mode != MODE_GRAND_PRIX:
-		scoreboard_label.text = ""
+	scoreboard_label.visible = true
+	scoreboard_label.z_index = 1
+
+	var mode_label := "GRAND PRIX" if game_mode == MODE_GRAND_PRIX else "QUICK PLAY"
+	var lines: Array[String] = [
+		mode_label,
+		"HAND %d / %d" % [current_hand_number, total_hands],
+		"",
+		"CARDS",
+	]
+	for player_index in range(PLAYER_NAMES.size()):
+		lines.append("%s: %d" % [PLAYER_NAMES[player_index], hands[player_index].size()])
+
+	if game_mode != MODE_GRAND_PRIX:
+		scoreboard_label.text = "\n".join(lines)
 		return
 
-	var lines: Array[String] = ["CHAMPIONSHIP STANDINGS"]
+	lines.append("")
+	lines.append("STANDINGS")
 	for player_name in PLAYER_NAMES:
-		lines.append("")
-		lines.append("%s:" % player_name)
-		lines.append("Points: %d" % int(player_points[player_name]))
-		lines.append("Chips: £%d" % int(player_chips[player_name]))
+		lines.append("%s: %d pts  £%d" % [
+			player_name,
+			int(player_points[player_name]),
+			int(player_chips[player_name]),
+		])
 
 	scoreboard_label.text = "\n".join(lines)
 

@@ -1,6 +1,7 @@
 extends Node
 
 const GameTableScene := preload("res://scenes/main/Main.tscn")
+const UISkins := preload("res://scripts/ui/UISkins.gd")
 
 const PLAYER_NAMES := ["You", "Bot 1", "Bot 2", "Bot 3"]
 const LENGTH_OPTIONS := [5, 10, 15, 20, 25, 30]
@@ -183,6 +184,7 @@ func _make_panel(position: Vector2, size: Vector2) -> ColorRect:
 	panel.position = position
 	panel.size = size
 	panel.color = Color(0.04, 0.06, 0.07, 0.96)
+	UISkins.apply_info_panel(panel)
 	return panel
 
 
@@ -193,6 +195,7 @@ func _make_label(text: String, position: Vector2, size: Vector2, font_size: int,
 	label.text = text
 	label.horizontal_alignment = alignment
 	label.add_theme_font_size_override("font_size", font_size)
+	UISkins.apply_ui_font(label)
 	return label
 
 
@@ -202,6 +205,7 @@ func _make_button(button_name: String, text: String, position: Vector2, size: Ve
 	button.position = position
 	button.size = size
 	button.text = text
+	UISkins.apply_utility_button(button)
 	return button
 
 
